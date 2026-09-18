@@ -31,7 +31,7 @@ test('Not here retains earlier assignments and charges for the same worker',()=>
     assert(s.responses.find(r=>r.id===assignment.id)!.active);assert.equal(total(s,w.id),before);
     assert.equal(eligible(s,w,s.shifts[0],assignment.id),'');
 });
-import { seed, apply, total, canvasSheet, sheetShiftsForGroup, sheetShiftSectionsForGroup, replacementQueue, queue, nextShift, coverage, eligible, at, dayAdd, intervalConflict, H, parseSeniority, chipsBlocked, cancellationPreview, scheduleReviews, baselineResetPreview, SEPT_18_BASELINE, SEPT_18_ROSTER, seniorityLabel, compareSeniority, type State, type Shift } from '../lib/engine.ts';
+import { seed, apply, total, canvasSheet, sheetShiftsForGroup, sheetShiftSectionsForGroup, replacementQueue, lateAvailableQueue, queue, nextShift, coverage, eligible, at, dayAdd, intervalConflict, H, parseSeniority, chipsBlocked, cancellationPreview, scheduleReviews, baselineResetPreview, SEPT_18_BASELINE, SEPT_18_ROSTER, seniorityLabel, compareSeniority, type State, type Shift } from '../lib/engine.ts';
 
 test('correct a refusal to acceptance without charging twice or reshuffling other responses',()=>{
     let s=setup(); s=respond(s,'refuse'); const first=s.responses[0]; s=respond(s);
@@ -364,4 +364,63 @@ test('Sept. 18 paper roster uses the exact photographed starting hours and exclu
     assert.equal(SEPT_18_ROSTER.length,42);
     assert.deepEqual(SEPT_18_ROSTER.map(w=>[w.seniority,w.name,w.hours,w.rdo]),expected);
     assert.equal(SEPT_18_ROSTER.map(w=>String(w.name)).includes('A. Majer CDL'),false);
+});
+
+
+test('late availability lets a Not here worker fill a recorded shortage later for +8 while retaining the Not here audit record',()=>{
+    let s=setup(['A'],['thu']);
+    const e=nextShift(s)!,away=queue(s,e)[0],before=total(s,away.id);
+    s=apply(s,{type:'notHere',shift:e.id,worker:away.id});
+    assert.equal(total(s,away.id),before);
+    assert.equal(s.notHere!.find(n=>n.worker===away.id)!.active,true);
+    assert.throws(()=>apply(s,{type:'lateAvailabilityAssign',shift:e.id,location:'Banks',worker:away.id}),/after local canvassing is closed/);
+    s.workers.forEach(w=>{if(w.id!==away.id)w.active=false;});
+    assert.equal(queue(s,e).length,0);
+    s=apply(s,{type:'shortage',shift:e.id});
+    assert.equal(e.id,s.shifts.find(x=>x.id===e.id)!.id);
+    assert.equal(s.shifts.find(x=>x.id===e.id)!.closed,true);
+    assert.equal(lateAvailableQueue(s,s.shifts.find(x=>x.id===e.id)!).map(w=>w.id).includes(away.id),true);
+    const remaining=coverage(s,s.shifts.find(x=>x.id===e.id)!,'Banks').remaining;
+    s=apply(s,{type:'lateAvailabilityAssign',shift:e.id,location:'Banks',worker:away.id});
+    assert.equal(total(s,away.id),before+8);
+    assert.equal(coverage(s,s.shifts.find(x=>x.id===e.id)!,'Banks').remaining,remaining-1);
+    assert.equal(s.notHere!.find(n=>n.worker===away.id)!.active,true);
+    const r=s.responses.findLast(r=>r.worker===away.id&&r.shift===e.id)!;
+    assert.equal(r.kind,'accept');assert.equal(r.location,'Banks');assert.equal(r.active,true);
+    assert.equal(s.charges.filter(c=>c.response===r.id).reduce((n,c)=>n+c.hours,0),8);
+    assert.match(s.history.at(-1)!.text,/late availability accepted/);
+    assert.match(s.history.at(-1)!.text,/Original Not here record retained/);
+    const row=canvasSheet(s,s.current).rows.find(row=>row.worker.id===away.id)!;
+    assert.equal(row.cells.find(cell=>cell.shift===e.id)!.entries.some(entry=>entry.kind==='Accepted'&&entry.hours===8),true);
+    assert.equal(lateAvailableQueue(s,s.shifts.find(x=>x.id===e.id)!).some(w=>w.id===away.id),false);
+});
+
+test('late availability enforces open coverage, RDO, duplicate-shift and work-rest eligibility',()=>{
+    let s=setup(['A'],['thu']);
+    const e=nextShift(s)!,away=queue(s,e)[0];
+    s=apply(s,{type:'notHere',shift:e.id,worker:away.id});
+    s.workers.forEach(w=>{if(w.id!==away.id)w.active=false;});
+    s=apply(s,{type:'shortage',shift:e.id});
+    const closed=s.shifts.find(x=>x.id===e.id)!;
+    assert(lateAvailableQueue(s,closed).some(w=>w.id===away.id));
+    const wrongRdo=structuredClone(s);wrongRdo.workers.find(w=>w.id===away.id)!.rdo='SM';
+    assert.equal(lateAvailableQueue(wrongRdo,wrongRdo.shifts.find(x=>x.id===e.id)!).some(w=>w.id===away.id),false);
+    const conflict=structuredClone(s);conflict.workers.find(w=>w.id===away.id)!.days=[0,1,2,3,4,5,6];
+    assert.equal(lateAvailableQueue(conflict,conflict.shifts.find(x=>x.id===e.id)!).some(w=>w.id===away.id),false);
+    s=apply(s,{type:'lateAvailabilityAssign',shift:e.id,location:'Banks',worker:away.id});
+    assert.throws(()=>apply(s,{type:'lateAvailabilityAssign',shift:e.id,location:'Banks',worker:away.id}),/no longer eligible|no longer has an open position/);
+    assert.throws(()=>apply(s,{type:'lateAvailabilityAssign',shift:e.id,location:'No such location',worker:away.id}),/valid location/);
+});
+
+test('late availability only considers Not here records made before or at the target shift in the same canvas',()=>{
+    let s=setup(['A'],['thu','fri']);
+    const first=nextShift(s)!;
+    // Close the first shift with no assignments so we can move to the next.
+    s.workers.forEach(w=>w.active=false);
+    s=apply(s,{type:'shortage',shift:first.id});
+    s.workers.forEach(w=>w.active=true);
+    const second=nextShift(s)!,away=queue(s,second)[0];
+    s=apply(s,{type:'notHere',shift:second.id,worker:away.id});
+    const firstState=s.shifts.find(x=>x.id===first.id)!;
+    assert.equal(lateAvailableQueue(s,firstState).some(w=>w.id===away.id),false);
 });

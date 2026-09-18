@@ -31,7 +31,7 @@ test('Not here retains earlier assignments and charges for the same worker',()=>
     assert(s.responses.find(r=>r.id===assignment.id)!.active);assert.equal(total(s,w.id),before);
     assert.equal(eligible(s,w,s.shifts[0],assignment.id),'');
 });
-import { seed, apply, total, canvasSheet, replacementQueue, queue, nextShift, coverage, eligible, at, dayAdd, intervalConflict, H, parseSeniority, chipsBlocked, cancellationPreview, scheduleReviews, baselineResetPreview, SEPT_18_BASELINE, type State, type Shift } from '../lib/engine.ts';
+import { seed, apply, total, canvasSheet, replacementQueue, queue, nextShift, coverage, eligible, at, dayAdd, intervalConflict, H, parseSeniority, chipsBlocked, cancellationPreview, scheduleReviews, baselineResetPreview, SEPT_18_BASELINE, SEPT_18_ROSTER, seniorityLabel, compareSeniority, type State, type Shift } from '../lib/engine.ts';
 
 test('correct a refusal to acceptance without charging twice or reshuffling other responses',()=>{
     let s=setup(); s=respond(s,'refuse'); const first=s.responses[0]; s=respond(s);
@@ -284,4 +284,42 @@ test('Sept. 18 baseline reset is all-or-nothing for missing, duplicate, extra, a
         assert.throws(()=>apply(s,{type:'resetRosterBaseline'}));
         assert.deepEqual(s,before);
     }
+});
+
+
+test('real Sept. 18 roster loader replaces all sample data with the exact 42-worker source roster and archives the sample state',()=>{
+    let s=setup(['A'],['thu']);
+    const e=nextShift(s)!,w=queue(s,e)[0];
+    s=apply(s,{type:'respond',shift:e.id,worker:w.id,kind:'refuse'});
+    const before=structuredClone(s);
+    const next=apply(s,{type:'loadSept18Roster'});
+    assert.deepEqual(next.sampleArchive!.state,before);
+    assert.equal(next.sampleArchive!.source,'Shop overtime baseline supplied September 18, 2026');
+    assert.equal(next.workers.length,42);
+    assert.deepEqual(next.shifts,[]);assert.deepEqual(next.responses,[]);assert.deepEqual(next.charges,[]);
+    assert.deepEqual(next.adjustments,[]);assert.deepEqual(next.canvases,[]);assert.equal(next.current,'');assert.equal(next.reviewed,false);
+    for(const target of SEPT_18_ROSTER){
+        const worker=next.workers.find(w=>w.name===target.name);
+        assert(worker,`missing ${target.name}`);
+        assert.equal(total(next,worker.id),target.hours);
+        assert.equal(worker.rdo,target.rdo);
+        assert.equal(seniorityLabel(worker),target.seniority);
+        assert.deepEqual(worker.days,target.rdo==='FS'?[0,1,2,3,6]:[1,2,3,4,5]);
+        assert.deepEqual(worker.overrides,[]);
+        assert.equal(worker.active,true);
+    }
+    const raffee=next.workers.find(w=>w.name==='A. Raffee')!;
+    assert.equal(raffee.seniorityMissing,true);
+    assert.equal(seniorityLabel(raffee),'—');
+    const sm=[...next.workers.filter(w=>w.rdo==='SM')].sort(compareSeniority);
+    assert.deepEqual(sm.map(w=>seniorityLabel(w)),['63','115','119','133','168','169','182','186','188','189','196','230','233','248','268','42P','50P','113P','134P','180P','—']);
+    assert.equal(sm.at(-1)!.name,'A. Raffee');
+    assert.throws(()=>apply(next,{type:'loadSept18Roster'}),/only replace the untouched sample roster/);
+});
+
+test('missing seniority can be recorded without inventing a number and sorts after known seniority',()=>{
+    const missing=parseSeniority('—'),known=parseSeniority('42P');
+    assert.equal(missing.seniorityMissing,true);
+    assert.equal(seniorityLabel(missing),'—');
+    assert(compareSeniority(known,missing)<0);
 });

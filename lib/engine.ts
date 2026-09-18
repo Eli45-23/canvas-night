@@ -62,6 +62,7 @@ export type Adjustment = {
     canceled: boolean;
 };
 export type State = {
+    sampleArchive?: { at: string; source: string; state: State };
     notHere?: {id:string;worker:string;canvas:string;shift:string;active:boolean;responseCount:number}[];
     workers: Worker[];
     shifts: Shift[];
@@ -191,6 +192,17 @@ export function apply(original: State, cmd: any): State {
     const shift = (id: string) => { const e = s.shifts.find(x => x.id === id); assert(e, 'Shift not found.'); return e; };
     const reason = () => { assert(typeof cmd.reason === 'string' && cmd.reason.trim(), 'Enter a reason.'); return cmd.reason.trim(); };
     switch (cmd.type) {
+        case 'replaceSamples': {
+            assert(s.workers.length > 0 && s.workers.every(w => /^sample-\d+$/.test(w.id) && /^Sample Worker \d+$/.test(w.name)), 'Only an entirely sample roster can be replaced.');
+            assert(!s.sampleArchive, 'Sample roster has already been replaced.');
+            assert(Array.isArray(cmd.workers) && cmd.workers.length > 0, 'Provide the replacement roster.');
+            assert(typeof cmd.source === 'string' && cmd.source.trim(), 'Provide the roster source.');
+            let next: State = { ...seed(), workers: [] };
+            for (const w of cmd.workers) next = apply(next, { ...w, id: undefined, type: 'worker' });
+            next.sampleArchive = { at: new Date().toISOString(), source: cmd.source, state: s };
+            log(next, `Replaced ${s.workers.length} sample workers with ${next.workers.length} workers from ${cmd.source}. Sample canvases and charges archived separately; imported hours are the new opening balances.`);
+            return next;
+        }
         case 'notHere': {
             const e=nextShift(s);
             assert(e&&e.id===cmd.shift,'This is not the current shift.');
@@ -212,7 +224,7 @@ export function apply(original: State, cmd: any): State {
         }
         case 'worker': {
             const n = parseSeniority(cmd.seniority);
-            assert(!s.workers.some(w => w.id !== cmd.id && w.seniority === n.seniority), 'Seniority numbers must be unique, including provisional workers.');
+            assert(!s.workers.some(w => w.id !== cmd.id && w.seniority === n.seniority && w.provisional === n.provisional), 'Seniority numbers must be unique within permanent or provisional status.');
             assert(typeof cmd.name === 'string' && cmd.name.trim(), 'Enter a worker name.');
             assert(Number.isFinite(cmd.starting) && cmd.starting >= 0, 'Starting hours must be zero or greater.');
             assert(['FS', 'SM'].includes(cmd.rdo), 'Select an RDO group.');

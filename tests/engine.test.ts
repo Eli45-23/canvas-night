@@ -142,6 +142,13 @@ test('cancel reverses accepted, refused and applied or queued absence charges', 
     assert.throws(() => apply(s, { type: 'cancel', shifts: [id], reason: 'duplicate' }));
 } });
 test('single opening cancellation reduces capacity and reverses its acceptance', () => { let s = setup(['A']); s = respond(s); const r = s.responses[0], e = s.shifts[0]; s = apply(s, { type: 'opening', shift: e.id, location: 'A', response: r.id, reason: 'One position withdrawn' }); assert.equal(coverage(s, s.shifts[0]).required, 1); assert.equal(coverage(s, s.shifts[0]).assigned, 0); assert.equal(total(s, r.worker), 0); });
-test('duplicate seniority blocked across permanent and provisional workers', () => { const s = seed(), w = s.workers[0]; assert.throws(() => apply(s, { type: 'worker', ...w, seniority: 'P2' }), /unique/); });
+test('seniority is unique within status; permanent and provisional numbers may match', () => { const s = seed(), w = s.workers[0]; assert.throws(() => apply(s, { ...w, type: 'worker', seniority: '2' }), /unique/); assert.equal(apply(s, { ...w, type: 'worker', seniority: 'P2' }).workers[0].provisional, true); });
 test('weekend date validation and repeat canvas protection', () => { assert.throws(() => apply(apply(seed(), { type: 'review' }), { type: 'setup', date: '2026-09-19', locations: ['A'] }), /Friday/); });
 test('New York daylight saving uses actual elapsed intervals', () => { assert.equal((at('2026-11-01', 6) - at('2026-10-31', 22)) / H, 9); assert.equal((at('2026-03-08', 6) - at('2026-03-07', 22)) / H, 7); });
+
+test('sample replacement archives all old activity without carrying charges into imported balances', () => {
+ let s=setup();const e=nextShift(s)!,w=queue(s,e)[0];s=apply(s,{type:'respond',shift:e.id,worker:w.id,kind:'refuse'});
+ const before=structuredClone(s); const command={type:'replaceSamples',source:'Test roster',workers:[{name:'Real worker',seniority:'P300',starting:664,rdo:'SM',days:[1,2,3,4,5],overrides:[],active:true}]};
+ const next=apply(s,command);assert.deepEqual(next.sampleArchive!.state,before);assert.deepEqual(s,before);assert.equal(next.workers.length,1);assert.equal(total(next,next.workers[0].id),664);assert.equal(next.charges.length,0);assert.equal(next.responses.length,0);assert.equal(next.canvases.length,0);assert.equal(next.current,'');assert.equal(next.workers[0].seniority,300);assert.throws(()=>apply(next,command),/sample roster/);
+ assert.throws(()=>apply(s,{...command,workers:[...command.workers,...command.workers]}),/unique/);assert.deepEqual(s,before);
+});

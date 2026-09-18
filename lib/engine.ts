@@ -95,22 +95,22 @@ export type State = {
     }[];
 };
 export const H = 3600000;
-export const BASELINE_RESET_SOURCE = 'Shop overtime baseline supplied September 18, 2026';
+export const BASELINE_RESET_SOURCE = 'Shop overtime starting-hour sheets for September 18–21, 2026';
 export const SEPT_18_ROSTER = [
-    {seniority:'11P',name:'A. Polyakov',hours:544,rdo:'FS'}, {seniority:'18P',name:'G. Campbell',hours:561,rdo:'FS'}, {seniority:'41P',name:'L. C. Bibby',hours:521,rdo:'FS'},
-    {seniority:'54P',name:'R. Simon',hours:642,rdo:'FS'}, {seniority:'56P',name:'C. Perez',hours:600,rdo:'FS'}, {seniority:'70P',name:'P. Sohan',hours:641,rdo:'FS'},
-    {seniority:'96P',name:'J. Valle',hours:634,rdo:'FS'}, {seniority:'97P',name:'S. Matthews',hours:568,rdo:'FS'}, {seniority:'99P',name:'J. Holley',hours:642,rdo:'FS'},
-    {seniority:'125P',name:'L. Santos',hours:550,rdo:'FS'}, {seniority:'146P',name:'B. Shivpaul CDL',hours:624,rdo:'FS'}, {seniority:'147P',name:'S. Lewis',hours:640,rdo:'FS'},
-    {seniority:'164P',name:'D. Gabriel',hours:582,rdo:'FS'}, {seniority:'169P',name:'G. Mendonca',hours:598,rdo:'FS'}, {seniority:'173P',name:'L. Gittens',hours:602,rdo:'FS'},
-    {seniority:'192P',name:'J. Hamilton CDL',hours:638,rdo:'FS'}, {seniority:'193P',name:'E. Maloski CDL',hours:632,rdo:'FS'}, {seniority:'197P',name:'A. Urbina',hours:624,rdo:'FS'},
-    {seniority:'202P',name:'J. Davilla',hours:609,rdo:'FS'}, {seniority:'203P',name:'J. Burke',hours:641,rdo:'FS'}, {seniority:'204P',name:'K. Felix',hours:641,rdo:'FS'},
-    {seniority:'63',name:'T. Codrington',hours:656,rdo:'SM'}, {seniority:'115',name:'B. Santana',hours:622,rdo:'SM'}, {seniority:'119',name:'M. Mohan',hours:646,rdo:'SM'},
-    {seniority:'133',name:'R. Metoo',hours:667,rdo:'SM'}, {seniority:'168',name:'V. Campbell',hours:668,rdo:'SM'}, {seniority:'169',name:'N. Cottone',hours:608,rdo:'SM'},
-    {seniority:'182',name:'D. Champagnie',hours:618,rdo:'SM'}, {seniority:'186',name:'E. Colon',hours:648,rdo:'SM'}, {seniority:'188',name:'B. Mistry',hours:582,rdo:'SM'},
-    {seniority:'189',name:'E. Lawes',hours:642,rdo:'SM'}, {seniority:'196',name:'D. Ahel',hours:664,rdo:'SM'}, {seniority:'230',name:'B. Green',hours:666,rdo:'SM'},
-    {seniority:'233',name:'W. Gordon',hours:618,rdo:'SM'}, {seniority:'248',name:'J. Quin',hours:658,rdo:'SM'}, {seniority:'268',name:'J. Prince',hours:673,rdo:'SM'},
-    {seniority:'42P',name:'C. Allen CDL',hours:672,rdo:'SM'}, {seniority:'50P',name:'A. Stadnyk CDL',hours:660,rdo:'SM'}, {seniority:'113P',name:'T. Vidal',hours:647,rdo:'SM'},
-    {seniority:'134P',name:'P. Wessels CDL',hours:647,rdo:'SM'}, {seniority:'180P',name:'D. Martinez',hours:606,rdo:'SM'}, {seniority:'—',name:'A. Raffee',hours:664,rdo:'SM'},
+    {seniority:'11P',name:'A. Polyakov',hours:544,rdo:'FS'}, {seniority:'18P',name:'G. Campbell',hours:561,rdo:'FS'}, {seniority:'41P',name:'L. C. Bibby',hours:489,rdo:'FS'},
+    {seniority:'54P',name:'R. Simon',hours:618,rdo:'FS'}, {seniority:'56P',name:'C. Perez',hours:568,rdo:'FS'}, {seniority:'70P',name:'P. Sohan',hours:617,rdo:'FS'},
+    {seniority:'96P',name:'J. Valle',hours:610,rdo:'FS'}, {seniority:'97P',name:'S. Matthews',hours:536,rdo:'FS'}, {seniority:'99P',name:'J. Holley',hours:626,rdo:'FS'},
+    {seniority:'125P',name:'L. Santos',hours:518,rdo:'FS'}, {seniority:'146P',name:'B. Shivpaul CDL',hours:592,rdo:'FS'}, {seniority:'147P',name:'S. Lewis',hours:608,rdo:'FS'},
+    {seniority:'164P',name:'D. Gabriel',hours:550,rdo:'FS'}, {seniority:'169P',name:'G. Mendonca',hours:598,rdo:'FS'}, {seniority:'173P',name:'L. Gittens',hours:602,rdo:'FS'},
+    {seniority:'192P',name:'J. Hamilton CDL',hours:622,rdo:'FS'}, {seniority:'193P',name:'E. Maloski CDL',hours:608,rdo:'FS'}, {seniority:'197P',name:'A. Urbina',hours:624,rdo:'FS'},
+    {seniority:'202P',name:'J. Davilla',hours:609,rdo:'FS'}, {seniority:'203P',name:'J. Burke',hours:617,rdo:'FS'}, {seniority:'204P',name:'K. Felix',hours:625,rdo:'FS'},
+    {seniority:'63',name:'T. Codrington',hours:632,rdo:'SM'}, {seniority:'115',name:'B. Santana',hours:590,rdo:'SM'}, {seniority:'119',name:'M. Mohan',hours:638,rdo:'SM'},
+    {seniority:'133',name:'R. Metoo',hours:651,rdo:'SM'}, {seniority:'168',name:'V. Campbell',hours:644,rdo:'SM'}, {seniority:'169',name:'N. Cottone',hours:608,rdo:'SM'},
+    {seniority:'182',name:'D. Champagnie',hours:586,rdo:'SM'}, {seniority:'186',name:'E. Colon',hours:616,rdo:'SM'}, {seniority:'188',name:'B. Mistry',hours:582,rdo:'SM'},
+    {seniority:'189',name:'E. Lawes',hours:642,rdo:'SM'}, {seniority:'196',name:'D. Ahel',hours:632,rdo:'SM'}, {seniority:'230',name:'B. Green',hours:650,rdo:'SM'},
+    {seniority:'233',name:'W. Gordon',hours:602,rdo:'SM'}, {seniority:'248',name:'J. Quin',hours:610,rdo:'SM'}, {seniority:'268',name:'J. Prince',hours:657,rdo:'SM'},
+    {seniority:'42P',name:'C. Allen CDL',hours:656,rdo:'SM'}, {seniority:'50P',name:'A. Stadnyk CDL',hours:620,rdo:'SM'}, {seniority:'113P',name:'T. Vidal',hours:599,rdo:'SM'},
+    {seniority:'134P',name:'P. Wessels CDL',hours:599,rdo:'SM'}, {seniority:'180P',name:'D. Martinez',hours:606,rdo:'SM'}, {seniority:'300P',name:'A. Raffee',hours:640,rdo:'SM'},
 ] as const;
 export const SEPT_18_BASELINE = SEPT_18_ROSTER.map(({name,hours,rdo})=>({name,hours,rdo}));
 const uid = () => crypto.randomUUID();
@@ -290,7 +290,7 @@ export function apply(original: State, cmd: any): State {
                 return {id:uid(),name:entry.name,starting:entry.hours,...parsed,rdo:entry.rdo,days:entry.rdo==='FS'?[0,1,2,3,6]:[1,2,3,4,5],overrides:[],active:true};
             });
             next.sampleArchive={at:new Date().toISOString(),source:BASELINE_RESET_SOURCE,state:archived};
-            log(next,`Replaced ${s.workers.length} sample workers with the 42-worker Sept. 18 shop roster and baseline hours. Sample activity was archived; A. Raffee remains without a seniority number.`);
+            log(next,`Replaced ${s.workers.length} sample workers with the 42-worker Sept. 18 shop roster and paper-sheet starting hours. Sample activity was archived; A. Raffee is 300P.`);
             return next;
         }
         case 'resetRosterBaseline': {

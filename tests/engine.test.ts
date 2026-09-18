@@ -294,7 +294,7 @@ test('real Sept. 18 roster loader replaces all sample data with the exact 42-wor
     const before=structuredClone(s);
     const next=apply(s,{type:'loadSept18Roster'});
     assert.deepEqual(next.sampleArchive!.state,before);
-    assert.equal(next.sampleArchive!.source,'Shop overtime baseline supplied September 18, 2026');
+    assert.equal(next.sampleArchive!.source,'Shop overtime starting-hour sheets for September 18–21, 2026');
     assert.equal(next.workers.length,42);
     assert.deepEqual(next.shifts,[]);assert.deepEqual(next.responses,[]);assert.deepEqual(next.charges,[]);
     assert.deepEqual(next.adjustments,[]);assert.deepEqual(next.canvases,[]);assert.equal(next.current,'');assert.equal(next.reviewed,false);
@@ -309,10 +309,13 @@ test('real Sept. 18 roster loader replaces all sample data with the exact 42-wor
         assert.equal(worker.active,true);
     }
     const raffee=next.workers.find(w=>w.name==='A. Raffee')!;
-    assert.equal(raffee.seniorityMissing,true);
-    assert.equal(seniorityLabel(raffee),'—');
+    assert.equal(raffee.seniorityMissing,undefined);
+    assert.equal(raffee.provisional,true);
+    assert.equal(seniorityLabel(raffee),'300P');
+    assert.equal(total(next,raffee.id),640);
+    assert.equal(next.workers.some(w=>w.name==='A. Majer CDL'),false);
     const sm=[...next.workers.filter(w=>w.rdo==='SM')].sort(compareSeniority);
-    assert.deepEqual(sm.map(w=>seniorityLabel(w)),['63','115','119','133','168','169','182','186','188','189','196','230','233','248','268','42P','50P','113P','134P','180P','—']);
+    assert.deepEqual(sm.map(w=>seniorityLabel(w)),['63','115','119','133','168','169','182','186','188','189','196','230','233','248','268','42P','50P','113P','134P','180P','300P']);
     assert.equal(sm.at(-1)!.name,'A. Raffee');
     assert.throws(()=>apply(next,{type:'loadSept18Roster'}),/only replace the untouched sample roster/);
 });
@@ -338,4 +341,27 @@ test('canvas sheet print sections preserve visible shift order and cap each sect
     }
     assert.throws(()=>sheetShiftSectionsForGroup(s,id,'FS',0),/1–8/);
     assert.throws(()=>sheetShiftSectionsForGroup(s,id,'FS',9),/1–8/);
+});
+
+
+test('Sept. 18 paper roster uses the exact photographed starting hours and excludes former worker A. Majer',()=>{
+    const expected=[
+      ['11P','A. Polyakov',544,'FS'],['18P','G. Campbell',561,'FS'],['41P','L. C. Bibby',489,'FS'],
+      ['54P','R. Simon',618,'FS'],['56P','C. Perez',568,'FS'],['70P','P. Sohan',617,'FS'],
+      ['96P','J. Valle',610,'FS'],['97P','S. Matthews',536,'FS'],['99P','J. Holley',626,'FS'],
+      ['125P','L. Santos',518,'FS'],['146P','B. Shivpaul CDL',592,'FS'],['147P','S. Lewis',608,'FS'],
+      ['164P','D. Gabriel',550,'FS'],['169P','G. Mendonca',598,'FS'],['173P','L. Gittens',602,'FS'],
+      ['192P','J. Hamilton CDL',622,'FS'],['193P','E. Maloski CDL',608,'FS'],['197P','A. Urbina',624,'FS'],
+      ['202P','J. Davilla',609,'FS'],['203P','J. Burke',617,'FS'],['204P','K. Felix',625,'FS'],
+      ['63','T. Codrington',632,'SM'],['115','B. Santana',590,'SM'],['119','M. Mohan',638,'SM'],
+      ['133','R. Metoo',651,'SM'],['168','V. Campbell',644,'SM'],['169','N. Cottone',608,'SM'],
+      ['182','D. Champagnie',586,'SM'],['186','E. Colon',616,'SM'],['188','B. Mistry',582,'SM'],
+      ['189','E. Lawes',642,'SM'],['196','D. Ahel',632,'SM'],['230','B. Green',650,'SM'],
+      ['233','W. Gordon',602,'SM'],['248','J. Quin',610,'SM'],['268','J. Prince',657,'SM'],
+      ['42P','C. Allen CDL',656,'SM'],['50P','A. Stadnyk CDL',620,'SM'],['113P','T. Vidal',599,'SM'],
+      ['134P','P. Wessels CDL',599,'SM'],['180P','D. Martinez',606,'SM'],['300P','A. Raffee',640,'SM'],
+    ];
+    assert.equal(SEPT_18_ROSTER.length,42);
+    assert.deepEqual(SEPT_18_ROSTER.map(w=>[w.seniority,w.name,w.hours,w.rdo]),expected);
+    assert.equal(SEPT_18_ROSTER.map(w=>String(w.name)).includes('A. Majer CDL'),false);
 });

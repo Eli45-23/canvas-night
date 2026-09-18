@@ -64,6 +64,7 @@ export type Adjustment = {
 export type State = {
     replacementCalls?: {id:string;adjustment:string;worker:string;kind:'accept'|'decline';response?:string}[];
     sampleArchive?: { at: string; source: string; state: State };
+    baselineResetArchive?: { at: string; source: string; state: State };
     notHere?: {id:string;worker:string;canvas:string;shift:string;active:boolean;responseCount:number}[];
     workers: Worker[];
     shifts: Shift[];
@@ -93,6 +94,23 @@ export type State = {
     }[];
 };
 export const H = 3600000;
+export const BASELINE_RESET_SOURCE = 'Shop overtime baseline supplied September 18, 2026';
+export const SEPT_18_BASELINE = [
+    {name:'A. Polyakov',hours:544,rdo:'FS'}, {name:'G. Campbell',hours:561,rdo:'FS'}, {name:'L. C. Bibby',hours:521,rdo:'FS'},
+    {name:'R. Simon',hours:642,rdo:'FS'}, {name:'C. Perez',hours:600,rdo:'FS'}, {name:'P. Sohan',hours:641,rdo:'FS'},
+    {name:'J. Valle',hours:634,rdo:'FS'}, {name:'S. Matthews',hours:568,rdo:'FS'}, {name:'J. Holley',hours:642,rdo:'FS'},
+    {name:'L. Santos',hours:550,rdo:'FS'}, {name:'B. Shivpaul CDL',hours:624,rdo:'FS'}, {name:'S. Lewis',hours:640,rdo:'FS'},
+    {name:'D. Gabriel',hours:582,rdo:'FS'}, {name:'G. Mendonca',hours:598,rdo:'FS'}, {name:'L. Gittens',hours:602,rdo:'FS'},
+    {name:'J. Hamilton CDL',hours:638,rdo:'FS'}, {name:'E. Maloski CDL',hours:632,rdo:'FS'}, {name:'A. Urbina',hours:624,rdo:'FS'},
+    {name:'J. Davilla',hours:609,rdo:'FS'}, {name:'J. Burke',hours:641,rdo:'FS'}, {name:'K. Felix',hours:641,rdo:'FS'},
+    {name:'T. Codrington',hours:656,rdo:'SM'}, {name:'B. Santana',hours:622,rdo:'SM'}, {name:'M. Mohan',hours:646,rdo:'SM'},
+    {name:'R. Metoo',hours:667,rdo:'SM'}, {name:'V. Campbell',hours:668,rdo:'SM'}, {name:'N. Cottone',hours:608,rdo:'SM'},
+    {name:'D. Champagnie',hours:618,rdo:'SM'}, {name:'E. Colon',hours:648,rdo:'SM'}, {name:'B. Mistry',hours:582,rdo:'SM'},
+    {name:'E. Lawes',hours:642,rdo:'SM'}, {name:'D. Ahel',hours:664,rdo:'SM'}, {name:'B. Green',hours:666,rdo:'SM'},
+    {name:'W. Gordon',hours:618,rdo:'SM'}, {name:'J. Quin',hours:658,rdo:'SM'}, {name:'J. Prince',hours:673,rdo:'SM'},
+    {name:'C. Allen CDL',hours:672,rdo:'SM'}, {name:'A. Stadnyk CDL',hours:660,rdo:'SM'}, {name:'T. Vidal',hours:647,rdo:'SM'},
+    {name:'P. Wessels CDL',hours:647,rdo:'SM'}, {name:'D. Martinez',hours:606,rdo:'SM'}, {name:'A. Raffee',hours:664,rdo:'SM'},
+] as const;
 const uid = () => crypto.randomUUID();
 function assert(ok: unknown, msg: string): asserts ok { if (!ok)
     throw new Error(msg); }
@@ -113,6 +131,30 @@ export function label(shift: {
 export function seed(): State { return { workers: Array.from({ length: 46 }, (_, i) => ({ id: `sample-${i + 1}`, name: `Sample Worker ${String(i + 1).padStart(2, '0')}`, starting: Math.floor(i / 6) * 8, seniority: i + 1, provisional: i % 7 === 6, rdo: i < 23 ? 'FS' : 'SM', days: i < 23 ? [0, 1, 2, 3, 6] : [1, 2, 3, 4, 5], overrides: [], active: true })), shifts: [], responses: [], charges: [], adjustments: [], canvases: [], current: '', reviewed: false, history: [], reviews: [] }; }
 // FS off Thursday 06:00 through Saturday 22:00: regular starts Sat, Sun, Mon, Tue, Wed.
 export function total(s: State, id: string) { return (s.workers.find(w => w.id === id)?.starting || 0) + s.charges.filter(c => c.worker === id).reduce((a, c) => a + c.hours, 0); }
+const baselineName = (name: string) => name.trim().toLowerCase();
+export function baselineResetPreview(s: State) {
+    const errors: string[] = [];
+    if (s.baselineResetArchive) errors.push('The Sept. 18 baseline reset was already applied.');
+    if (s.workers.length !== SEPT_18_BASELINE.length) errors.push(`Current roster has ${s.workers.length} workers; expected ${SEPT_18_BASELINE.length}.`);
+    const byName = new Map<string, Worker[]>();
+    for (const w of s.workers) {
+        const key=baselineName(w.name),list=byName.get(key)||[];list.push(w);byName.set(key,list);
+    }
+    const targetNames=new Set(SEPT_18_BASELINE.map(t=>baselineName(t.name)));
+    const extras=s.workers.filter(w=>!targetNames.has(baselineName(w.name)));
+    if(extras.length) errors.push(`Workers not in the Sept. 18 baseline: ${extras.map(w=>w.name).join(', ')}.`);
+    const rows=SEPT_18_BASELINE.flatMap(target=>{
+        const matches=byName.get(baselineName(target.name))||[];
+        if(matches.length!==1){
+            errors.push(matches.length===0?`Missing baseline worker: ${target.name}.`:`Duplicate roster name for baseline worker: ${target.name}.`);
+            return [];
+        }
+        const w=matches[0];
+        if(w.rdo!==target.rdo) errors.push(`${target.name} is in RDO group ${w.rdo}; baseline expects ${target.rdo}.`);
+        return [{worker:w,current:total(s,w.id),target:target.hours,difference:target.hours-total(s,w.id)}];
+    });
+    return {rows,errors};
+}
 export function compare(s: State, a: Worker, b: Worker) { return total(s, a.id) - total(s, b.id) || Number(a.provisional) - Number(b.provisional) || a.seniority - b.seniority; }
 export function currentShifts(s: State) { return s.shifts.filter(e => e.canvas === s.current); }
 export function coverage(s: State, e: Shift, location?: string) { const slots = e.locations.filter(l => !location || l.name === location); const required = slots.reduce((a, l) => a + l.required, 0); const assigned = s.responses.filter(r => r.shift === e.id && r.active && r.kind !== 'refuse' && !r.absent && (!location || r.location === location)).length; return { required, assigned, remaining: required - assigned }; }
@@ -227,6 +269,18 @@ export function apply(original: State, cmd: any): State {
     const shift = (id: string) => { const e = s.shifts.find(x => x.id === id); assert(e, 'Shift not found.'); return e; };
     const reason = () => { assert(typeof cmd.reason === 'string' && cmd.reason.trim(), 'Enter a reason.'); return cmd.reason.trim(); };
     switch (cmd.type) {
+        case 'resetRosterBaseline': {
+            assert(!s.baselineResetArchive, 'The Sept. 18 baseline reset was already applied.');
+            const preview=baselineResetPreview(s);
+            assert(preview.errors.length===0, preview.errors.join(' '));
+            const archived=structuredClone(s);
+            for(const row of preview.rows) worker(row.worker.id).starting=row.target;
+            s.baselineResetArchive={at:new Date().toISOString(),source:BASELINE_RESET_SOURCE,state:archived};
+            s.shifts=[];s.responses=[];s.charges=[];s.adjustments=[];s.canvases=[];s.current='';
+            s.reviews=[];s.notHere=[];s.replacementCalls=[];s.reviewed=false;s.history=[];
+            log(s,`Archived the previous operational state and applied the Sept. 18 baseline to ${preview.rows.length} workers. Roster identity and schedules were preserved.`);
+            break;
+        }
         case 'canvasDate': {
             const c=s.canvases.find(c=>c.id===cmd.canvas);assert(c,'Select a saved canvas.');
             assert(/^\d{4}-\d{2}-\d{2}$/.test(cmd.date)&&localDate(at(cmd.date,12))===cmd.date,'Enter a valid canvassing date.');

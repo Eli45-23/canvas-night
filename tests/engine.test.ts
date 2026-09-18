@@ -367,19 +367,14 @@ test('Sept. 18 paper roster uses the exact photographed starting hours and exclu
 });
 
 
-test('late availability lets a Not here worker fill a recorded shortage later for +8 while retaining the Not here audit record',()=>{
+test('late availability lets a Not here worker fill any still-open coverage later for +8 while retaining the Not here audit record',()=>{
     let s=setup(['A'],['thu']);
     const e=nextShift(s)!,away=queue(s,e)[0],before=total(s,away.id);
     s=apply(s,{type:'notHere',shift:e.id,worker:away.id});
     assert.equal(total(s,away.id),before);
     assert.equal(s.notHere!.find(n=>n.worker===away.id)!.active,true);
-    assert.throws(()=>apply(s,{type:'lateAvailabilityAssign',shift:e.id,location:'Banks',worker:away.id}),/after local canvassing is closed/);
-    s.workers.forEach(w=>{if(w.id!==away.id)w.active=false;});
-    assert.equal(queue(s,e).length,0);
-    s=apply(s,{type:'shortage',shift:e.id});
-    assert.equal(e.id,s.shifts.find(x=>x.id===e.id)!.id);
-    assert.equal(s.shifts.find(x=>x.id===e.id)!.closed,true);
-    assert.equal(lateAvailableQueue(s,s.shifts.find(x=>x.id===e.id)!).map(w=>w.id).includes(away.id),true);
+    assert.equal(s.shifts.find(x=>x.id===e.id)!.closed,false);
+    assert.equal(lateAvailableQueue(s,s.shifts.find(x=>x.id===e.id)!).some(w=>w.id===away.id),true);
     const remaining=coverage(s,s.shifts.find(x=>x.id===e.id)!,'Banks').remaining;
     s=apply(s,{type:'lateAvailabilityAssign',shift:e.id,location:'Banks',worker:away.id});
     assert.equal(total(s,away.id),before+8);
@@ -412,15 +407,12 @@ test('late availability enforces open coverage, RDO, duplicate-shift and work-re
     assert.throws(()=>apply(s,{type:'lateAvailabilityAssign',shift:e.id,location:'No such location',worker:away.id}),/valid location/);
 });
 
-test('late availability only considers Not here records made before or at the target shift in the same canvas',()=>{
+test('late availability uses any active Not here record from the same canvas, including for an earlier coverage-needed shift',()=>{
     let s=setup(['A'],['thu','fri']);
-    const first=nextShift(s)!;
-    // Close the first shift with no assignments so we can move to the next.
-    s.workers.forEach(w=>w.active=false);
-    s=apply(s,{type:'shortage',shift:first.id});
-    s.workers.forEach(w=>w.active=true);
-    const second=nextShift(s)!,away=queue(s,second)[0];
-    s=apply(s,{type:'notHere',shift:second.id,worker:away.id});
-    const firstState=s.shifts.find(x=>x.id===first.id)!;
-    assert.equal(lateAvailableQueue(s,firstState).some(w=>w.id===away.id),false);
+    const shifts=currentShifts(s),first=shifts[0],later=shifts.at(-1)!,worker=s.workers.find(w=>w.rdo===first.group)!;
+    (s.notHere ||= []).push({id:'later-away',worker:worker.id,canvas:first.canvas,shift:later.id,active:true,responseCount:s.responses.length});
+    assert.equal(lateAvailableQueue(s,first).some(w=>w.id===worker.id),true);
+    const other=structuredClone(s);
+    other.notHere![0].canvas='different-canvas';
+    assert.equal(lateAvailableQueue(other,other.shifts.find(x=>x.id===first.id)!).some(w=>w.id===worker.id),false);
 });

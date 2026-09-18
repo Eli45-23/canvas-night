@@ -14,6 +14,12 @@
   scrollbar-width: thin;
 }
 
+.assigned-workers { margin: 0; font-size: 14px; }
+.assigned-workers summary { color: #154b69; padding: 4px 0; text-decoration: underline; text-underline-offset: 3px; }
+.assigned-workers summary:focus-visible { outline: 2px solid #154b69; outline-offset: 3px; }
+.assigned-workers ul { margin: 8px 0 0; padding-left: 18px; list-style: disc; white-space: normal; min-width: 160px; }
+.assigned-workers li { padding: 3px 0; }
+
 @utility scrollbar-none {
   scrollbar-width: none;
 

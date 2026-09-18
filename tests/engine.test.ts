@@ -31,7 +31,7 @@ test('Not here retains earlier assignments and charges for the same worker',()=>
     assert(s.responses.find(r=>r.id===assignment.id)!.active);assert.equal(total(s,w.id),before);
     assert.equal(eligible(s,w,s.shifts[0],assignment.id),'');
 });
-import { seed, apply, total, canvasSheet, replacementQueue, queue, nextShift, coverage, eligible, at, dayAdd, intervalConflict, H, parseSeniority, chipsBlocked, cancellationPreview, scheduleReviews, baselineResetPreview, SEPT_18_BASELINE, SEPT_18_ROSTER, seniorityLabel, compareSeniority, type State, type Shift } from '../lib/engine.ts';
+import { seed, apply, total, canvasSheet, sheetShiftsForGroup, sheetShiftSectionsForGroup, replacementQueue, queue, nextShift, coverage, eligible, at, dayAdd, intervalConflict, H, parseSeniority, chipsBlocked, cancellationPreview, scheduleReviews, baselineResetPreview, SEPT_18_BASELINE, SEPT_18_ROSTER, seniorityLabel, compareSeniority, type State, type Shift } from '../lib/engine.ts';
 
 test('correct a refusal to acceptance without charging twice or reshuffling other responses',()=>{
     let s=setup(); s=respond(s,'refuse'); const first=s.responses[0]; s=respond(s);
@@ -322,4 +322,20 @@ test('missing seniority can be recorded without inventing a number and sorts aft
     assert.equal(missing.seniorityMissing,true);
     assert.equal(seniorityLabel(missing),'—');
     assert(compareSeniority(known,missing)<0);
+});
+
+
+test('canvas sheet print sections preserve visible shift order and cap each section at four shifts',()=>{
+    let s=setup(['A'],['thu','fri','satday','sat','sunday','sun']);
+    const id=s.current;
+    for(const group of ['FS','SM']){
+        const visible=sheetShiftsForGroup(s,id,group);
+        const sections=sheetShiftSectionsForGroup(s,id,group,4);
+        assert(sections.every(section=>section.length>=1&&section.length<=4));
+        assert.deepEqual(sections.flat().map(e=>e.id),visible.map(e=>e.id));
+        assert.equal(new Set(sections.flat().map(e=>e.id)).size,visible.length);
+        if(visible.length>4)assert(sections.length>1);
+    }
+    assert.throws(()=>sheetShiftSectionsForGroup(s,id,'FS',0),/1–8/);
+    assert.throws(()=>sheetShiftSectionsForGroup(s,id,'FS',9),/1–8/);
 });

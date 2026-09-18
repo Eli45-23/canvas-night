@@ -31,7 +31,7 @@ test('Not here retains earlier assignments and charges for the same worker',()=>
     assert(s.responses.find(r=>r.id===assignment.id)!.active);assert.equal(total(s,w.id),before);
     assert.equal(eligible(s,w,s.shifts[0],assignment.id),'');
 });
-import { seed, apply, total, canvasSheet, replacementQueue, queue, nextShift, coverage, eligible, at, dayAdd, intervalConflict, H, parseSeniority, chipsBlocked, cancellationPreview, scheduleReviews, type State, type Shift } from '../lib/engine.ts';
+import { seed, apply, total, canvasSheet, replacementQueue, queue, nextShift, coverage, eligible, at, dayAdd, intervalConflict, H, parseSeniority, chipsBlocked, cancellationPreview, scheduleReviews, baselineResetPreview, SEPT_18_BASELINE, type State, type Shift } from '../lib/engine.ts';
 
 test('correct a refusal to acceptance without charging twice or reshuffling other responses',()=>{
     let s=setup(); s=respond(s,'refuse'); const first=s.responses[0]; s=respond(s);
@@ -218,4 +218,70 @@ test('material pickup can be added on any day and uses normal charges, schedule 
  const r=queue(s,e)[0],hours=total(s,r.id);s=apply(s,{type:'respond',shift:e.id,worker:r.id,kind:'refuse'});assert.equal(total(s,r.id),hours+8);
  assert.throws(()=>apply(s,command),/already listed/);s=apply(s,{type:'cancel',shifts:[e.id],reason:'Canceled pickup'});assert.equal(total(s,w.id),before);assert.equal(total(s,r.id),hours);
  s=apply(s,{...command,workType:'Banks',date:'2026-09-24'});assert.equal(s.shifts.at(-1)!.end-s.shifts.at(-1)!.start,8*H);
+});
+
+
+function baselineRosterState(): State {
+    const s=seed(),templates=s.workers.map(w=>structuredClone(w));
+    s.workers=SEPT_18_BASELINE.map((target,i)=>{
+        const template=templates[i%templates.length];
+        return {
+            ...template,
+            id:`real-${i+1}`,
+            name:target.name,
+            starting:100+i,
+            seniority:500+i,
+            provisional:i%4===0,
+            rdo:target.rdo,
+            days:target.rdo==='FS'?[0,1,2,3,6]:[1,2,3,4,5],
+            overrides:[{date:'2026-09-30',work:i%2===0}],
+            active:i%6!==0,
+        };
+    });
+    const shiftId='old-shift',canvasId='old-canvas',workerId=s.workers[0].id;
+    s.shifts=[{id:shiftId,canvas:canvasId,type:'Chip-out',start:at('2026-09-18',22),end:at('2026-09-19',6),locations:[{name:'A',required:2}],closed:false,canceled:false}];
+    s.responses=[{id:'old-response',worker:workerId,shift:shiftId,kind:'accept',location:'A',active:true}];
+    s.charges=[{id:'old-charge',worker:workerId,shift:shiftId,response:'old-response',kind:'Accepted',hours:8}];
+    s.adjustments=[{id:'old-adjustment',worker:workerId,shift:shiftId,response:'old-response',notice:'',reason:'test',replacement:'',penalty:true,applied:false,canceled:false}];
+    s.canvases=[{id:canvasId,date:'2026-09-18',reviewed:false,baseline:Object.fromEntries(s.workers.map(w=>[w.id,w.starting]))}];
+    s.current=canvasId;s.reviewed=true;
+    s.history=[{id:'old-history',at:'2026-09-18T12:00:00.000Z',text:'Old activity'}];
+    s.reviews=[{id:'old-review',text:'Review me',resolved:false,responseIds:['old-response']}];
+    s.notHere=[{id:'old-away',worker:s.workers[1].id,canvas:canvasId,shift:shiftId,active:true,responseCount:1}];
+    s.replacementCalls=[{id:'old-call',adjustment:'old-adjustment',worker:s.workers[2].id,kind:'decline'}];
+    return s;
+}
+
+test('Sept. 18 baseline reset archives old activity, preserves roster metadata, and sets all 42 totals exactly',()=>{
+    const s=baselineRosterState(),before=structuredClone(s);
+    const metadata=new Map(s.workers.map(w=>[w.name,{id:w.id,name:w.name,seniority:w.seniority,provisional:w.provisional,rdo:w.rdo,days:structuredClone(w.days),overrides:structuredClone(w.overrides),active:w.active}]));
+    const preview=baselineResetPreview(s);assert.equal(preview.errors.length,0);assert.equal(preview.rows.length,42);
+    const next=apply(s,{type:'resetRosterBaseline'});
+    assert.equal(next.workers.length,42);
+    for(const target of SEPT_18_BASELINE){
+        const w=next.workers.find(w=>w.name===target.name)!;
+        assert(w,`missing ${target.name}`);
+        assert.equal(total(next,w.id),target.hours);
+        assert.deepEqual({id:w.id,name:w.name,seniority:w.seniority,provisional:w.provisional,rdo:w.rdo,days:w.days,overrides:w.overrides,active:w.active},metadata.get(target.name));
+    }
+    assert.deepEqual(next.shifts,[]);assert.deepEqual(next.responses,[]);assert.deepEqual(next.charges,[]);
+    assert.deepEqual(next.adjustments,[]);assert.deepEqual(next.canvases,[]);assert.equal(next.current,'');
+    assert.deepEqual(next.reviews,[]);assert.deepEqual(next.notHere,[]);assert.deepEqual(next.replacementCalls,[]);
+    assert.equal(next.reviewed,false);assert.equal(next.history.length,1);assert.match(next.history[0].text,/42 workers/);
+    assert.deepEqual(next.baselineResetArchive!.state,before);assert.deepEqual(s,before);
+    assert.throws(()=>apply(next,{type:'resetRosterBaseline'}),/already applied/);
+});
+
+test('Sept. 18 baseline reset is all-or-nothing for missing, duplicate, extra, and mismatched RDO workers',()=>{
+    for(const mutate of [
+        (s:State)=>{s.workers[0].name='A. Polyakoff';},
+        (s:State)=>{s.workers[1].name=s.workers[0].name;},
+        (s:State)=>{s.workers.push({...structuredClone(s.workers[0]),id:'extra-worker',name:'Extra Worker'});},
+        (s:State)=>{s.workers[0].rdo='SM';},
+    ]){
+        const s=baselineRosterState();mutate(s);const before=structuredClone(s);
+        assert(baselineResetPreview(s).errors.length>0);
+        assert.throws(()=>apply(s,{type:'resetRosterBaseline'}));
+        assert.deepEqual(s,before);
+    }
 });

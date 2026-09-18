@@ -207,6 +207,16 @@ export function replacementQueue(s: State, a: Adjustment) {
         && !intervalConflict(work(s,w,e),{start:e.start,end:e.end,source:e.type}))
         .sort((a,b)=>compare(s,a,b));
 }
+export function lateAvailableQueue(s: State, e: Shift) {
+    if(e.canceled || !e.closed || coverage(s,e).remaining<=0) return [];
+    const shifts=s.shifts.filter(x=>x.canvas===e.canvas),targetIndex=shifts.findIndex(x=>x.id===e.id);
+    if(targetIndex<0) return [];
+    const marked=new Set((s.notHere||[]).filter(n=>n.active&&n.canvas===e.canvas&&shifts.findIndex(x=>x.id===n.shift)<=targetIndex).map(n=>n.worker));
+    return s.workers.filter(w=>marked.has(w.id)&&w.active&&(!e.group||w.rdo===e.group)
+        && !s.responses.some(r=>r.worker===w.id&&r.shift===e.id&&r.active)
+        && !intervalConflict(work(s,w,e),{start:e.start,end:e.end,source:e.type}))
+        .sort((a,b)=>compare(s,a,b));
+}
 export function canvasSheet(s: State, id: string) {
     const canvas=s.canvases.find(c=>c.id===id);
     assert(canvas,'Select a saved canvas.');
@@ -322,6 +332,19 @@ export function apply(original: State, cmd: any): State {
             if(cmd.workType==='Banks'&&cmd.hour===22){const d=weekday(cmd.date);if(d===4||d===5)e.group='FS';if(d===6||d===0)e.group='SM';}
             s.shifts.push(e);s.current=c.id;
             log(s,`Added ${e.type}, ${label(e)}, ${cmd.required} positions at ${cmd.location.trim()} to weekend ${c.date}.`);break;
+        }
+        case 'lateAvailabilityAssign': {
+            const e=shift(cmd.shift);
+            assert(!e.canceled&&e.closed,'Late availability can only fill a recorded shortage after local canvassing is closed.');
+            assert(typeof cmd.location==='string'&&e.locations.some(l=>l.name===cmd.location),'Choose a valid location.');
+            assert(coverage(s,e,cmd.location).remaining>0,'This location no longer has an open position.');
+            const w=lateAvailableQueue(s,e).find(w=>w.id===cmd.worker);
+            assert(w,'This worker is no longer eligible for late availability.');
+            const id=uid();
+            s.responses.push({id,worker:w.id,shift:e.id,kind:'accept',location:cmd.location,active:true});
+            charge(s,w.id,e.id,'Accepted',8,{response:id});
+            log(s,`${w.name}: late availability accepted ${e.type}, ${label(e)}, ${cmd.location}; +8 hours. Original Not here record retained.`);
+            break;
         }
         case 'replacementOutside': {
             const a=s.adjustments.find(a=>a.id===cmd.adjustment&&!a.canceled);

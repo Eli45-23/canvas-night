@@ -62,6 +62,7 @@ export type Adjustment = {
     canceled: boolean;
 };
 export type State = {
+    replacementCalls?: {id:string;adjustment:string;worker:string;kind:'accept'|'decline';response?:string}[];
     sampleArchive?: { at: string; source: string; state: State };
     notHere?: {id:string;worker:string;canvas:string;shift:string;active:boolean;responseCount:number}[];
     workers: Worker[];
@@ -145,9 +146,18 @@ export function intervalConflict(intervals: Interval[], candidate: Interval) { i
 export function eligible(s: State, w: Worker, e: Shift, ignore?: string) { if (!ignore && (s.notHere || []).some(n=>n.active&&n.worker===w.id&&n.canvas===e.canvas))
     return 'Not here — skipped for this entire canvas; no hours charged.'; if (!w.active)
     return 'Worker is inactive.'; if (e.group && w.rdo !== e.group)
-    return 'Different RDO group for this banks offer.'; if (s.responses.some(r => r.worker === w.id && r.shift === e.id && r.active && r.id !== ignore))
+    return 'Different RDO group for this banks offer.'; if (s.responses.some(r => r.worker === w.id && r.shift === e.id && r.active && r.id !== ignore && !(ignore && r.kind==='refuse' && s.charges.some(c=>c.response===ignore&&c.kind==='Replacement'))))
     return 'Already answered this shift.'; return intervalConflict(work(s, w, e, ignore), { start: e.start, end: e.end, source: e.type }); }
 export function queue(s: State, e: Shift) { return s.workers.filter(w => !eligible(s, w, e)).sort((a, b) => compare(s, a, b)); }
+export function replacementQueue(s: State, a: Adjustment) {
+    const e=s.shifts.find(e=>e.id===a.shift), original=s.responses.find(r=>r.id===a.response);
+    if(!e || !original || a.canceled || e.canceled || a.replacement || coverage(s,e,original.location).remaining<=0) return [];
+    return s.workers.filter(w=>w.active && (!e.group || w.rdo===e.group)
+        && !s.responses.some(r=>r.worker===w.id && r.shift===e.id && r.active && r.kind==='accept')
+        && !(s.replacementCalls||[]).some(c=>c.adjustment===a.id&&c.worker===w.id)
+        && !intervalConflict(work(s,w,e),{start:e.start,end:e.end,source:e.type}))
+        .sort((a,b)=>compare(s,a,b));
+}
 function log(s: State, text: string) { s.history.push({ id: uid(), at: new Date().toISOString(), text }); }
 function charge(s: State, worker: string, shift: string, kind: string, hours: number, extra: Partial<Charge> = {}) { s.charges.push({ id: uid(), worker, shift, kind, hours, ...extra }); }
 function reverse(s: State, c: Charge) { if (c.reverses || s.charges.some(x => x.reverses === c.id))
@@ -192,6 +202,35 @@ export function apply(original: State, cmd: any): State {
     const shift = (id: string) => { const e = s.shifts.find(x => x.id === id); assert(e, 'Shift not found.'); return e; };
     const reason = () => { assert(typeof cmd.reason === 'string' && cmd.reason.trim(), 'Enter a reason.'); return cmd.reason.trim(); };
     switch (cmd.type) {
+        case 'replacementOutside': {
+            const a=s.adjustments.find(a=>a.id===cmd.adjustment&&!a.canceled);
+            assert(a&&!a.replacement,'Select an unfilled call-out.');
+            const e=shift(a.shift),original=s.responses.find(r=>r.id===a.response)!;
+            assert(!e.canceled&&coverage(s,e,original.location).remaining>0,'This opening is no longer available.');
+            assert(replacementQueue(s,a).length===0,'Contact all eligible local replacements first.');
+            const r:Response={id:uid(),worker:'',shift:e.id,kind:'outside',location:original.location,active:true};
+            s.responses.push(r);a.replacement='outside';a.replacementResponse=r.id;
+            log(s,`Last-minute replacement filled by outside worker: ${e.type}, ${label(e)}, ${original.location}. No name or hours recorded.`);
+            break;
+        }
+        case 'replacementRespond': {
+            const a=s.adjustments.find(a=>a.id===cmd.adjustment&&!a.canceled);
+            assert(a&&!a.replacement,'Select an unfilled call-out.');
+            const e=shift(a.shift),original=s.responses.find(r=>r.id===a.response)!;
+            assert(!e.canceled&&original.absent&&coverage(s,e,original.location).remaining>0,'This opening is no longer available.');
+            const w=replacementQueue(s,a)[0];
+            assert(w&&w.id===cmd.worker,'The replacement order changed. Reload and contact the next worker.');
+            assert(['accept','decline'].includes(cmd.kind),'Invalid replacement answer.');
+            const call:{id:string;adjustment:string;worker:string;kind:'accept'|'decline';response?:string}={id:uid(),adjustment:a.id,worker:w.id,kind:cmd.kind};
+            if(cmd.kind==='accept'){
+                const r:Response={id:uid(),worker:w.id,shift:e.id,kind:'accept',location:original.location,active:true};
+                s.responses.push(r);a.replacement=w.id;a.replacementResponse=r.id;call.response=r.id;
+                charge(s,w.id,e.id,'Replacement',8,{response:r.id,adjustment:a.id});
+            }
+            (s.replacementCalls ||= []).push(call);
+            log(s,`${w.name}: last-minute replacement ${cmd.kind==='accept'?'accepted; +8 hours':'declined; no hours charged'}, ${e.type}, ${label(e)}, ${original.location}.`);
+            break;
+        }
         case 'replaceSamples': {
             assert(s.workers.length > 0 && s.workers.every(w => /^sample-\d+$/.test(w.id) && /^Sample Worker \d+$/.test(w.name)), 'Only an entirely sample roster can be replaced.');
             assert(!s.sampleArchive, 'Sample roster has already been replaced.');
@@ -479,7 +518,7 @@ export function apply(original: State, cmd: any): State {
                 }
             }
             r.absent = true;
-            if(!a.replacement&&e.canvas!=='prior')e.closed=false;
+            if(!a.replacement&&e.canvas!=='prior'&&coverage(s,e).remaining===1)e.closed=true;
             s.adjustments.push(a);
             s.reviewed = false;
             affected(s, `Review coverage and later offers after ${worker(r.worker).name}'s call-out, ${label(e)}.`);
@@ -492,7 +531,7 @@ export function apply(original: State, cmd: any): State {
             const r = s.responses.find(r => r.id === a.response)!;
             assert(!shift(a.shift).canceled, 'Work is canceled.');
             const e=shift(a.shift);
-            const created=s.charges.filter(c=>c.adjustment===a.id&&c.kind==='Replacement').map(c=>c.response);
+            const created=[...(a.replacement==='outside'?[a.replacementResponse]:[]),...s.charges.filter(c=>c.adjustment===a.id&&c.kind==='Replacement').map(c=>c.response)];
             s.responses.filter(x=>created.includes(x.id)&&x.active).forEach(x=>{x.active=false;if(x.startingReclassified)worker(x.worker).starting+=x.startingReclassified;});
             assert(coverage(s,e,r.location).remaining>0, 'This position now has other coverage. Correct that coverage before restoring the original assignment.');
             r.absent = false;

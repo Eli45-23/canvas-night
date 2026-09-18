@@ -31,7 +31,7 @@ test('Not here retains earlier assignments and charges for the same worker',()=>
     assert(s.responses.find(r=>r.id===assignment.id)!.active);assert.equal(total(s,w.id),before);
     assert.equal(eligible(s,w,s.shifts[0],assignment.id),'');
 });
-import { seed, apply, total, queue, nextShift, coverage, eligible, at, dayAdd, intervalConflict, H, parseSeniority, chipsBlocked, cancellationPreview, type State, type Shift } from '../lib/engine.ts';
+import { seed, apply, total, replacementQueue, queue, nextShift, coverage, eligible, at, dayAdd, intervalConflict, H, parseSeniority, chipsBlocked, cancellationPreview, scheduleReviews, type State, type Shift } from '../lib/engine.ts';
 
 test('correct a refusal to acceptance without charging twice or reshuffling other responses',()=>{
     let s=setup(); s=respond(s,'refuse'); const first=s.responses[0]; s=respond(s);
@@ -151,4 +151,41 @@ test('sample replacement archives all old activity without carrying charges into
  const before=structuredClone(s); const command={type:'replaceSamples',source:'Test roster',workers:[{name:'Real worker',seniority:'P300',starting:664,rdo:'SM',days:[1,2,3,4,5],overrides:[],active:true}]};
  const next=apply(s,command);assert.deepEqual(next.sampleArchive!.state,before);assert.deepEqual(s,before);assert.equal(next.workers.length,1);assert.equal(total(next,next.workers[0].id),664);assert.equal(next.charges.length,0);assert.equal(next.responses.length,0);assert.equal(next.canvases.length,0);assert.equal(next.current,'');assert.equal(next.workers[0].seniority,300);assert.throws(()=>apply(next,command),/sample roster/);
  assert.throws(()=>apply(s,{...command,workers:[...command.workers,...command.workers]}),/unique/);assert.deepEqual(s,before);
+});
+
+test('replacement calls reoffer refusals and not-here workers, skip declines without charge and charge acceptances once',()=>{
+ let s=setup(['A'],['thu']);const e=nextShift(s)!;
+ const refused=queue(s,e)[0];s=apply(s,{type:'respond',shift:e.id,worker:refused.id,kind:'refuse'});
+ const away=queue(s,e)[0];s=apply(s,{type:'notHere',shift:e.id,worker:away.id});
+ const original=queue(s,e)[0];s=apply(s,{type:'respond',shift:e.id,worker:original.id,kind:'accept',location:'Banks'});
+ const r=s.responses.find(r=>r.worker===original.id&&r.kind==='accept')!;
+ s=apply(s,{type:'absence',response:r.id,reason:'Unavailable',notice:new Date(e.start-5*H).toISOString()});
+ let a=s.adjustments.at(-1)!;assert(replacementQueue(s,a).some(w=>w.id===away.id));assert(replacementQueue(s,a).some(w=>w.id===refused.id));assert(!replacementQueue(s,a).some(w=>w.id===original.id));
+ const first=replacementQueue(s,a)[0],before=total(s,first.id),charges=s.charges.length;
+ s=apply(s,{type:'replacementRespond',adjustment:a.id,worker:first.id,kind:'decline'});a=s.adjustments.at(-1)!;
+ assert.equal(total(s,first.id),before);assert.equal(s.charges.length,charges);assert(!replacementQueue(s,a).some(w=>w.id===first.id));
+ assert.throws(()=>apply(s,{type:'replacementRespond',adjustment:a.id,worker:first.id,kind:'accept'}),/order changed/);
+ const next=replacementQueue(s,a)[0],hours=total(s,next.id);s=apply(s,{type:'replacementRespond',adjustment:a.id,worker:next.id,kind:'accept'});
+ assert.equal(total(s,next.id),hours+8);assert.equal(s.adjustments.at(-1)!.replacement,next.id);assert.equal(replacementQueue(s,s.adjustments.at(-1)!).length,0);
+ assert.throws(()=>apply(s,{type:'replacementRespond',adjustment:a.id,worker:next.id,kind:'accept'}),/unfilled/);
+ s=apply(s,{type:'cancel',shifts:[e.id],reason:'Canceled'});assert.equal(total(s,next.id),hours);
+});
+
+test('a refused worker can accept replacement without a false schedule warning; undo restores original coverage',()=>{
+ let s=setup(['A'],['thu']),e=nextShift(s)!,w=queue(s,e)[0];
+ s=apply(s,{type:'respond',shift:e.id,worker:w.id,kind:'refuse'});
+ const original=queue(s,e)[0];s=apply(s,{type:'respond',shift:e.id,worker:original.id,kind:'accept',location:'Banks'});
+ s=apply(s,{type:'absence',response:s.responses.at(-1)!.id,reason:'Test'});const a=s.adjustments.at(-1)!;
+ s.workers.forEach(x=>{if(x.id!==w.id&&x.id!==original.id)x.active=false;});
+ assert.equal(replacementQueue(s,a)[0].id,w.id);s=apply(s,{type:'replacementRespond',adjustment:a.id,worker:w.id,kind:'accept'});
+ assert.equal(scheduleReviews(s).length,0);assert.equal(total(s,w.id),16);
+ s=apply(s,{type:'undoAbsence',id:a.id,reason:'Corrected'});assert.equal(total(s,w.id),8);assert.equal(s.responses.find(r=>r.id===a.response)!.absent,false);
+});
+test('replacement list enforces schedule and status and outside coverage has no worker charge',()=>{
+ let s=setup(['A'],['thu']),e=nextShift(s)!,w=queue(s,e)[0];s=apply(s,{type:'respond',shift:e.id,worker:w.id,kind:'accept',location:'Banks'});
+ s=apply(s,{type:'absence',response:s.responses.at(-1)!.id,reason:'Test'});const a=s.adjustments.at(-1)!;
+ assert.throws(()=>apply(s,{type:'replacementOutside',adjustment:a.id}),/eligible local/);
+ s.workers.forEach(x=>{x.days=[0,1,2,3,4,5,6]});assert.equal(replacementQueue(s,a).length,0);const count=s.charges.length;
+ s=apply(s,{type:'replacementOutside',adjustment:a.id});assert.equal(s.charges.length,count);assert.equal(s.responses.at(-1)!.kind,'outside');
+ s=apply(s,{type:'undoAbsence',id:a.id,reason:'Corrected'});assert.equal(s.responses.at(-1)!.active,false);
 });

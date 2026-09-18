@@ -189,3 +189,13 @@ test('replacement list enforces schedule and status and outside coverage has no 
  s=apply(s,{type:'replacementOutside',adjustment:a.id});assert.equal(s.charges.length,count);assert.equal(s.responses.at(-1)!.kind,'outside');
  s=apply(s,{type:'undoAbsence',id:a.id,reason:'Corrected'});assert.equal(s.responses.at(-1)!.active,false);
 });
+
+test('replacement ranking uses current ledger hours then status then seniority',()=>{
+ let s=setup(['A'],['thu']),e=nextShift(s)!,original=queue(s,e)[0];s=apply(s,{type:'respond',shift:e.id,worker:original.id,kind:'accept',location:'Banks'});
+ s=apply(s,{type:'absence',response:s.responses.at(-1)!.id,reason:'Test'});const a=s.adjustments.at(-1)!;
+ const ws=s.workers.filter(w=>w.id!==original.id).slice(0,4);s.workers.forEach(w=>w.active=ws.includes(w)||w.id===original.id);
+ ws.forEach(w=>{w.starting=100;w.days=[];w.provisional=false;});
+ Object.assign(ws[0],{seniority:1});Object.assign(ws[1],{seniority:90});Object.assign(ws[2],{seniority:2,provisional:true});Object.assign(ws[3],{seniority:3});
+ s=apply(s,{type:'correction',worker:ws[0].id,shift:e.id,hours:8,reason:'Current hours test'});
+ assert.deepEqual(replacementQueue(s,a).map(w=>w.id),[ws[3].id,ws[1].id,ws[2].id,ws[0].id]);
+});

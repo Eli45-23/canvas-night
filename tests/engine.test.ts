@@ -312,7 +312,7 @@ test('real Sept. 18 roster loader replaces all sample data with the exact 42-wor
     assert.equal(raffee.seniorityMissing,true);
     assert.equal(seniorityLabel(raffee),'—');
     const sm=[...next.workers.filter(w=>w.rdo==='SM')].sort(compareSeniority);
-    assert.deepEqual(sm.map(w=>seniorityLabel(w)),['63','115','119','133','168','169','182','186','188','189','196','230','233','248','268','P42','P50','P113','P134','P180','—']);
+    assert.deepEqual(sm.map(w=>seniorityLabel(w)),['63','115','119','133','168','169','182','186','188','189','196','230','233','248','268','42P','50P','113P','134P','180P','—']);
     assert.equal(sm.at(-1)!.name,'A. Raffee');
     assert.throws(()=>apply(next,{type:'loadSept18Roster'}),/only replace the untouched sample roster/);
 });

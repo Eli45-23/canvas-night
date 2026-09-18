@@ -117,7 +117,7 @@ const uid = () => crypto.randomUUID();
 function assert(ok: unknown, msg: string): asserts ok { if (!ok)
     throw new Error(msg); }
 export function parseSeniority(value: string) { const v = value.trim().toUpperCase(); if(v==='-'||v==='—') return {seniority:0,provisional:false,seniorityMissing:true as const}; assert(/^(P\d+|\d+P|\d+)$/.test(v), 'Use a seniority number, P100, 100P, or — if not provided.'); return { seniority: Number(v.replace('P', '')), provisional: v.includes('P') }; }
-export function seniorityLabel(w: Pick<Worker,'seniority'|'provisional'|'seniorityMissing'>) { return w.seniorityMissing?'—':`${w.provisional?'P':''}${w.seniority}`; }
+export function seniorityLabel(w: Pick<Worker,'seniority'|'provisional'|'seniorityMissing'>) { return w.seniorityMissing?'—':`${w.seniority}${w.provisional?'P':''}`; }
 export function employmentStatus(w: Pick<Worker,'provisional'|'seniorityMissing'>) { return w.seniorityMissing?'Status not listed':w.provisional?'Provisional':'Permanent'; }
 export function compareSeniority(a: Pick<Worker,'seniority'|'provisional'|'seniorityMissing'>, b: Pick<Worker,'seniority'|'provisional'|'seniorityMissing'>) { if(!!a.seniorityMissing!==!!b.seniorityMissing)return Number(!!a.seniorityMissing)-Number(!!b.seniorityMissing); if(a.seniorityMissing&&b.seniorityMissing)return 0; return Number(a.provisional)-Number(b.provisional)||a.seniority-b.seniority; }
 export function dayAdd(date: string, n: number) { return new Date(Date.parse(date + 'T12:00:00Z') + n * 24 * H).toISOString().slice(0, 10); }

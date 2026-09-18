@@ -208,10 +208,8 @@ export function replacementQueue(s: State, a: Adjustment) {
         .sort((a,b)=>compare(s,a,b));
 }
 export function lateAvailableQueue(s: State, e: Shift) {
-    if(e.canceled || !e.closed || coverage(s,e).remaining<=0) return [];
-    const shifts=s.shifts.filter(x=>x.canvas===e.canvas),targetIndex=shifts.findIndex(x=>x.id===e.id);
-    if(targetIndex<0) return [];
-    const marked=new Set((s.notHere||[]).filter(n=>n.active&&n.canvas===e.canvas&&shifts.findIndex(x=>x.id===n.shift)<=targetIndex).map(n=>n.worker));
+    if(e.canceled || coverage(s,e).remaining<=0) return [];
+    const marked=new Set((s.notHere||[]).filter(n=>n.active&&n.canvas===e.canvas).map(n=>n.worker));
     return s.workers.filter(w=>marked.has(w.id)&&w.active&&(!e.group||w.rdo===e.group)
         && !s.responses.some(r=>r.worker===w.id&&r.shift===e.id&&r.active)
         && !intervalConflict(work(s,w,e),{start:e.start,end:e.end,source:e.type}))
@@ -335,7 +333,8 @@ export function apply(original: State, cmd: any): State {
         }
         case 'lateAvailabilityAssign': {
             const e=shift(cmd.shift);
-            assert(!e.canceled&&e.closed,'Late availability can only fill a recorded shortage after local canvassing is closed.');
+            assert(!e.canceled,'This work was canceled.');
+            assert(coverage(s,e).remaining>0,'This shift no longer has open coverage.');
             assert(typeof cmd.location==='string'&&e.locations.some(l=>l.name===cmd.location),'Choose a valid location.');
             assert(coverage(s,e,cmd.location).remaining>0,'This location no longer has an open position.');
             const w=lateAvailableQueue(s,e).find(w=>w.id===cmd.worker);

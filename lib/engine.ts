@@ -5,6 +5,7 @@ export type Worker = {
     starting: number;
     seniority: number;
     provisional: boolean;
+    seniorityMissing?: boolean;
     rdo: string;
     days: number[];
     overrides: {
@@ -95,26 +96,30 @@ export type State = {
 };
 export const H = 3600000;
 export const BASELINE_RESET_SOURCE = 'Shop overtime baseline supplied September 18, 2026';
-export const SEPT_18_BASELINE = [
-    {name:'A. Polyakov',hours:544,rdo:'FS'}, {name:'G. Campbell',hours:561,rdo:'FS'}, {name:'L. C. Bibby',hours:521,rdo:'FS'},
-    {name:'R. Simon',hours:642,rdo:'FS'}, {name:'C. Perez',hours:600,rdo:'FS'}, {name:'P. Sohan',hours:641,rdo:'FS'},
-    {name:'J. Valle',hours:634,rdo:'FS'}, {name:'S. Matthews',hours:568,rdo:'FS'}, {name:'J. Holley',hours:642,rdo:'FS'},
-    {name:'L. Santos',hours:550,rdo:'FS'}, {name:'B. Shivpaul CDL',hours:624,rdo:'FS'}, {name:'S. Lewis',hours:640,rdo:'FS'},
-    {name:'D. Gabriel',hours:582,rdo:'FS'}, {name:'G. Mendonca',hours:598,rdo:'FS'}, {name:'L. Gittens',hours:602,rdo:'FS'},
-    {name:'J. Hamilton CDL',hours:638,rdo:'FS'}, {name:'E. Maloski CDL',hours:632,rdo:'FS'}, {name:'A. Urbina',hours:624,rdo:'FS'},
-    {name:'J. Davilla',hours:609,rdo:'FS'}, {name:'J. Burke',hours:641,rdo:'FS'}, {name:'K. Felix',hours:641,rdo:'FS'},
-    {name:'T. Codrington',hours:656,rdo:'SM'}, {name:'B. Santana',hours:622,rdo:'SM'}, {name:'M. Mohan',hours:646,rdo:'SM'},
-    {name:'R. Metoo',hours:667,rdo:'SM'}, {name:'V. Campbell',hours:668,rdo:'SM'}, {name:'N. Cottone',hours:608,rdo:'SM'},
-    {name:'D. Champagnie',hours:618,rdo:'SM'}, {name:'E. Colon',hours:648,rdo:'SM'}, {name:'B. Mistry',hours:582,rdo:'SM'},
-    {name:'E. Lawes',hours:642,rdo:'SM'}, {name:'D. Ahel',hours:664,rdo:'SM'}, {name:'B. Green',hours:666,rdo:'SM'},
-    {name:'W. Gordon',hours:618,rdo:'SM'}, {name:'J. Quin',hours:658,rdo:'SM'}, {name:'J. Prince',hours:673,rdo:'SM'},
-    {name:'C. Allen CDL',hours:672,rdo:'SM'}, {name:'A. Stadnyk CDL',hours:660,rdo:'SM'}, {name:'T. Vidal',hours:647,rdo:'SM'},
-    {name:'P. Wessels CDL',hours:647,rdo:'SM'}, {name:'D. Martinez',hours:606,rdo:'SM'}, {name:'A. Raffee',hours:664,rdo:'SM'},
+export const SEPT_18_ROSTER = [
+    {seniority:'11P',name:'A. Polyakov',hours:544,rdo:'FS'}, {seniority:'18P',name:'G. Campbell',hours:561,rdo:'FS'}, {seniority:'41P',name:'L. C. Bibby',hours:521,rdo:'FS'},
+    {seniority:'54P',name:'R. Simon',hours:642,rdo:'FS'}, {seniority:'56P',name:'C. Perez',hours:600,rdo:'FS'}, {seniority:'70P',name:'P. Sohan',hours:641,rdo:'FS'},
+    {seniority:'96P',name:'J. Valle',hours:634,rdo:'FS'}, {seniority:'97P',name:'S. Matthews',hours:568,rdo:'FS'}, {seniority:'99P',name:'J. Holley',hours:642,rdo:'FS'},
+    {seniority:'125P',name:'L. Santos',hours:550,rdo:'FS'}, {seniority:'146P',name:'B. Shivpaul CDL',hours:624,rdo:'FS'}, {seniority:'147P',name:'S. Lewis',hours:640,rdo:'FS'},
+    {seniority:'164P',name:'D. Gabriel',hours:582,rdo:'FS'}, {seniority:'169P',name:'G. Mendonca',hours:598,rdo:'FS'}, {seniority:'173P',name:'L. Gittens',hours:602,rdo:'FS'},
+    {seniority:'192P',name:'J. Hamilton CDL',hours:638,rdo:'FS'}, {seniority:'193P',name:'E. Maloski CDL',hours:632,rdo:'FS'}, {seniority:'197P',name:'A. Urbina',hours:624,rdo:'FS'},
+    {seniority:'202P',name:'J. Davilla',hours:609,rdo:'FS'}, {seniority:'203P',name:'J. Burke',hours:641,rdo:'FS'}, {seniority:'204P',name:'K. Felix',hours:641,rdo:'FS'},
+    {seniority:'63',name:'T. Codrington',hours:656,rdo:'SM'}, {seniority:'115',name:'B. Santana',hours:622,rdo:'SM'}, {seniority:'119',name:'M. Mohan',hours:646,rdo:'SM'},
+    {seniority:'133',name:'R. Metoo',hours:667,rdo:'SM'}, {seniority:'168',name:'V. Campbell',hours:668,rdo:'SM'}, {seniority:'169',name:'N. Cottone',hours:608,rdo:'SM'},
+    {seniority:'182',name:'D. Champagnie',hours:618,rdo:'SM'}, {seniority:'186',name:'E. Colon',hours:648,rdo:'SM'}, {seniority:'188',name:'B. Mistry',hours:582,rdo:'SM'},
+    {seniority:'189',name:'E. Lawes',hours:642,rdo:'SM'}, {seniority:'196',name:'D. Ahel',hours:664,rdo:'SM'}, {seniority:'230',name:'B. Green',hours:666,rdo:'SM'},
+    {seniority:'233',name:'W. Gordon',hours:618,rdo:'SM'}, {seniority:'248',name:'J. Quin',hours:658,rdo:'SM'}, {seniority:'268',name:'J. Prince',hours:673,rdo:'SM'},
+    {seniority:'42P',name:'C. Allen CDL',hours:672,rdo:'SM'}, {seniority:'50P',name:'A. Stadnyk CDL',hours:660,rdo:'SM'}, {seniority:'113P',name:'T. Vidal',hours:647,rdo:'SM'},
+    {seniority:'134P',name:'P. Wessels CDL',hours:647,rdo:'SM'}, {seniority:'180P',name:'D. Martinez',hours:606,rdo:'SM'}, {seniority:'—',name:'A. Raffee',hours:664,rdo:'SM'},
 ] as const;
+export const SEPT_18_BASELINE = SEPT_18_ROSTER.map(({name,hours,rdo})=>({name,hours,rdo}));
 const uid = () => crypto.randomUUID();
 function assert(ok: unknown, msg: string): asserts ok { if (!ok)
     throw new Error(msg); }
-export function parseSeniority(value: string) { const v = value.trim().toUpperCase(); assert(/^(P\d+|\d+P|\d+)$/.test(v), 'Use a seniority number, P100, or 100P.'); return { seniority: Number(v.replace('P', '')), provisional: v.includes('P') }; }
+export function parseSeniority(value: string) { const v = value.trim().toUpperCase(); if(v==='-'||v==='—') return {seniority:0,provisional:false,seniorityMissing:true as const}; assert(/^(P\d+|\d+P|\d+)$/.test(v), 'Use a seniority number, P100, 100P, or — if not provided.'); return { seniority: Number(v.replace('P', '')), provisional: v.includes('P') }; }
+export function seniorityLabel(w: Pick<Worker,'seniority'|'provisional'|'seniorityMissing'>) { return w.seniorityMissing?'—':`${w.provisional?'P':''}${w.seniority}`; }
+export function employmentStatus(w: Pick<Worker,'provisional'|'seniorityMissing'>) { return w.seniorityMissing?'Status not listed':w.provisional?'Provisional':'Permanent'; }
+export function compareSeniority(a: Pick<Worker,'seniority'|'provisional'|'seniorityMissing'>, b: Pick<Worker,'seniority'|'provisional'|'seniorityMissing'>) { if(!!a.seniorityMissing!==!!b.seniorityMissing)return Number(!!a.seniorityMissing)-Number(!!b.seniorityMissing); if(a.seniorityMissing&&b.seniorityMissing)return 0; return Number(a.provisional)-Number(b.provisional)||a.seniority-b.seniority; }
 export function dayAdd(date: string, n: number) { return new Date(Date.parse(date + 'T12:00:00Z') + n * 24 * H).toISOString().slice(0, 10); }
 export function weekday(date: string) { return new Date(date + 'T12:00:00Z').getUTCDay(); }
 const zone = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
@@ -155,7 +160,7 @@ export function baselineResetPreview(s: State) {
     });
     return {rows,errors};
 }
-export function compare(s: State, a: Worker, b: Worker) { return total(s, a.id) - total(s, b.id) || Number(a.provisional) - Number(b.provisional) || a.seniority - b.seniority; }
+export function compare(s: State, a: Worker, b: Worker) { return total(s, a.id) - total(s, b.id) || compareSeniority(a,b); }
 export function currentShifts(s: State) { return s.shifts.filter(e => e.canvas === s.current); }
 export function coverage(s: State, e: Shift, location?: string) { const slots = e.locations.filter(l => !location || l.name === location); const required = slots.reduce((a, l) => a + l.required, 0); const assigned = s.responses.filter(r => r.shift === e.id && r.active && r.kind !== 'refuse' && !r.absent && (!location || r.location === location)).length; return { required, assigned, remaining: required - assigned }; }
 export function nextShift(s: State) { return currentShifts(s).find(e => !e.canceled && !e.closed && coverage(s, e).remaining > 0); }
@@ -269,6 +274,19 @@ export function apply(original: State, cmd: any): State {
     const shift = (id: string) => { const e = s.shifts.find(x => x.id === id); assert(e, 'Shift not found.'); return e; };
     const reason = () => { assert(typeof cmd.reason === 'string' && cmd.reason.trim(), 'Enter a reason.'); return cmd.reason.trim(); };
     switch (cmd.type) {
+        case 'loadSept18Roster': {
+            assert(s.workers.length > 0 && s.workers.every(w => /^sample-\d+$/.test(w.id) && /^Sample Worker \d+$/.test(w.name)), 'The Sept. 18 shop roster can only replace the untouched sample roster.');
+            assert(!s.sampleArchive, 'The sample roster has already been replaced.');
+            const archived=structuredClone(s);
+            const next:State={...seed(),workers:[]};
+            next.workers=SEPT_18_ROSTER.map(entry=>{
+                const parsed=parseSeniority(entry.seniority);
+                return {id:uid(),name:entry.name,starting:entry.hours,...parsed,rdo:entry.rdo,days:entry.rdo==='FS'?[0,1,2,3,6]:[1,2,3,4,5],overrides:[],active:true};
+            });
+            next.sampleArchive={at:new Date().toISOString(),source:BASELINE_RESET_SOURCE,state:archived};
+            log(next,`Replaced ${s.workers.length} sample workers with the 42-worker Sept. 18 shop roster and baseline hours. Sample activity was archived; A. Raffee remains without a seniority number.`);
+            return next;
+        }
         case 'resetRosterBaseline': {
             assert(!s.baselineResetArchive, 'The Sept. 18 baseline reset was already applied.');
             const preview=baselineResetPreview(s);
@@ -360,7 +378,7 @@ export function apply(original: State, cmd: any): State {
         }
         case 'worker': {
             const n = parseSeniority(cmd.seniority);
-            assert(!s.workers.some(w => w.id !== cmd.id && w.seniority === n.seniority && w.provisional === n.provisional), 'Seniority numbers must be unique within permanent or provisional status.');
+            assert(n.seniorityMissing || !s.workers.some(w => w.id !== cmd.id && !w.seniorityMissing && w.seniority === n.seniority && w.provisional === n.provisional), 'Seniority numbers must be unique within permanent or provisional status.');
             assert(typeof cmd.name === 'string' && cmd.name.trim(), 'Enter a worker name.');
             assert(Number.isFinite(cmd.starting) && cmd.starting >= 0, 'Starting hours must be zero or greater.');
             assert(['FS', 'SM'].includes(cmd.rdo), 'Select an RDO group.');

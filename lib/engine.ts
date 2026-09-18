@@ -178,6 +178,11 @@ export function canvasSheet(s: State, id: string) {
     });
     return {canvas,shifts,rows,start:shifts.length?localDate(Math.min(...shifts.map(e=>e.start))):canvas.date,end:shifts.length?localDate(Math.max(...shifts.map(e=>e.end))):canvas.date};
 }
+export function sheetShiftsForGroup(s: State, id: string, group: string) {
+    const report=canvasSheet(s,id),rows=report.rows.filter(r=>r.worker.rdo===group);
+    return report.shifts.filter(e=>rows.some(r=>r.cells.some(c=>c.shift===e.id&&c.entries.length>0)) ||
+        ((!e.group||e.group===group)&&rows.some(r=>!intervalConflict(regular(r.worker,e.start,e.end),{start:e.start,end:e.end,source:e.type}))));
+}
 function log(s: State, text: string) { s.history.push({ id: uid(), at: new Date().toISOString(), text }); }
 function charge(s: State, worker: string, shift: string, kind: string, hours: number, extra: Partial<Charge> = {}) { s.charges.push({ id: uid(), worker, shift, kind, hours, ...extra }); }
 function reverse(s: State, c: Charge) { if (c.reverses || s.charges.some(x => x.reverses === c.id))

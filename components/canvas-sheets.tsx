@@ -42,7 +42,7 @@ export function CanvasSheets({state,act,busy}:{state:State;act:(command:any)=>Pr
        <b className="sheet-part">Part {sectionIndex+1} of {sections.length}</b>
       </div>
       <p className="sheet-legend">A = accepted · R = refused · Rep = replacement · P = absence penalty · Rev = reversal · Adj = correction · — = no charge. Each shift shows net hours charged and the running total, in canvassing order.</p>
-      <div className="sheet-scroll"><table className="hours-sheet"><thead><tr>
+      <div className="sheet-scroll"><table className="hours-sheet"><colgroup><col className="sheet-col-seniority"/><col className="sheet-col-worker"/><col className="sheet-col-running"/>{section.flatMap(e=>[<col className="sheet-col-charge" key={e.id+"charge-col"}/>,<col className="sheet-col-running" key={e.id+"total-col"}/>])}<col className="sheet-col-running"/></colgroup><thead><tr>
        <th rowSpan={2}>Seniority</th><th rowSpan={2}>Worker</th><th rowSpan={2}>{first?'Starting hours':'Brought forward'}</th>
        {section.map(e=><th colSpan={2} key={e.id}>{e.type}<br/>{label(e)}{e.canceled&&<><br/>CANCELED</>}</th>)}
        <th rowSpan={2}>{last?'Ending total':'After section'}</th>

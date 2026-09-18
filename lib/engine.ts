@@ -230,6 +230,12 @@ export function sheetShiftsForGroup(s: State, id: string, group: string) {
     return report.shifts.filter(e=>rows.some(r=>r.cells.some(c=>c.shift===e.id&&c.entries.length>0)) ||
         ((!e.group||e.group===group)&&rows.some(r=>!intervalConflict(regular(r.worker,e.start,e.end),{start:e.start,end:e.end,source:e.type}))));
 }
+export function sheetShiftSectionsForGroup(s: State, id: string, group: string, perSection=4) {
+    assert(Number.isInteger(perSection)&&perSection>0&&perSection<=8,'Use 1–8 shifts per sheet section.');
+    const visible=sheetShiftsForGroup(s,id,group),sections:Shift[][]=[];
+    for(let i=0;i<visible.length;i+=perSection) sections.push(visible.slice(i,i+perSection));
+    return sections;
+}
 function log(s: State, text: string) { s.history.push({ id: uid(), at: new Date().toISOString(), text }); }
 function charge(s: State, worker: string, shift: string, kind: string, hours: number, extra: Partial<Charge> = {}) { s.charges.push({ id: uid(), worker, shift, kind, hours, ...extra }); }
 function reverse(s: State, c: Charge) { if (c.reverses || s.charges.some(x => x.reverses === c.id))

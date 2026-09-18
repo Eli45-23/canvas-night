@@ -416,3 +416,32 @@ test('late availability uses any active Not here record from the same canvas, in
     other.notHere![0].canvas='different-canvas';
     assert.equal(lateAvailableQueue(other,other.shifts.find(x=>x.id===first.id)!).some(w=>w.id===worker.id),false);
 });
+
+
+test('secured outside coverage can fill any open Results position before shortage closure without charging a worker',()=>{
+    let s=setup(['A'],['thu']);
+    const e=nextShift(s)!;
+    assert.equal(e.closed,false);
+    assert(queue(s,e).length>0);
+    const localOrder=queue(s,e).map(w=>w.id);
+    const beforeRemaining=coverage(s,e,'Banks').remaining;
+    const beforeCharges=s.charges.length;
+    s=apply(s,{type:'outside',shift:e.id,location:'Banks'});
+    assert.equal(s.charges.length,beforeCharges);
+    assert.equal(s.responses.at(-1)!.kind,'outside');
+    assert.equal(s.responses.at(-1)!.worker,'');
+    assert.equal(coverage(s,e,'Banks').remaining,beforeRemaining-1);
+    assert.deepEqual(queue(s,e).map(w=>w.id),localOrder);
+    assert.match(s.history.at(-1)!.text,/No worker name or hours recorded/);
+    assert.match(s.history.at(-1)!.text,/local responses were retained/);
+});
+
+test('outside coverage still rejects canceled work and locations with no remaining opening',()=>{
+    let s=setup(['A'],['thu']);
+    const e=nextShift(s)!;
+    const canceled=structuredClone(s);
+    canceled.shifts.find(x=>x.id===e.id)!.canceled=true;
+    assert.throws(()=>apply(canceled,{type:'outside',shift:e.id,location:'Banks'}),/canceled/);
+    while(coverage(s,e,'Banks').remaining>0)s=apply(s,{type:'outside',shift:e.id,location:'Banks'});
+    assert.throws(()=>apply(s,{type:'outside',shift:e.id,location:'Banks'}),/No open position/);
+});

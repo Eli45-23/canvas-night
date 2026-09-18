@@ -509,9 +509,8 @@ export function apply(original: State, cmd: any): State {
             const e = shift(cmd.shift);
             assert(!e.canceled, 'This work was canceled.');
             assert(e.locations.some(l => l.name === cmd.location && coverage(s, e, l.name).remaining > 0), 'No open position at this location.');
-            assert(e.closed && queue(s, e).length === 0, 'Finish local canvassing and record the shortage first.');
             s.responses.push({ id: uid(), worker: '', shift: e.id, kind: 'outside', location: cmd.location, active: true });
-            log(s, `Filled by outside worker: ${e.type}, ${label(e)}, ${cmd.location}. No worker name or hours recorded.`);
+            log(s, `Filled by outside worker: ${e.type}, ${label(e)}, ${cmd.location}. No worker name or hours recorded; local responses were retained.`);
             break;
         }
         case 'undo':

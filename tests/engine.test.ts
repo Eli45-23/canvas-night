@@ -409,7 +409,7 @@ test('late availability enforces open coverage, RDO, duplicate-shift and work-re
 
 test('late availability uses any active Not here record from the same canvas, including for an earlier coverage-needed shift',()=>{
     let s=setup(['A'],['thu','fri']);
-    const shifts=currentShifts(s),first=shifts[0],later=shifts.at(-1)!,worker=s.workers.find(w=>w.rdo===first.group)!;
+    const shifts=s.shifts.filter(e=>e.canvas===s.current),first=shifts[0],later=shifts.at(-1)!,worker=s.workers.find(w=>w.rdo===first.group)!;
     (s.notHere ||= []).push({id:'later-away',worker:worker.id,canvas:first.canvas,shift:later.id,active:true,responseCount:s.responses.length});
     assert.equal(lateAvailableQueue(s,first).some(w=>w.id===worker.id),true);
     const other=structuredClone(s);

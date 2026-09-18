@@ -31,7 +31,7 @@ test('Not here retains earlier assignments and charges for the same worker',()=>
     assert(s.responses.find(r=>r.id===assignment.id)!.active);assert.equal(total(s,w.id),before);
     assert.equal(eligible(s,w,s.shifts[0],assignment.id),'');
 });
-import { seed, apply, total, replacementQueue, queue, nextShift, coverage, eligible, at, dayAdd, intervalConflict, H, parseSeniority, chipsBlocked, cancellationPreview, scheduleReviews, type State, type Shift } from '../lib/engine.ts';
+import { seed, apply, total, canvasSheet, replacementQueue, queue, nextShift, coverage, eligible, at, dayAdd, intervalConflict, H, parseSeniority, chipsBlocked, cancellationPreview, scheduleReviews, type State, type Shift } from '../lib/engine.ts';
 
 test('correct a refusal to acceptance without charging twice or reshuffling other responses',()=>{
     let s=setup(); s=respond(s,'refuse'); const first=s.responses[0]; s=respond(s);
@@ -198,4 +198,24 @@ test('replacement ranking uses current ledger hours then status then seniority',
  Object.assign(ws[0],{seniority:1});Object.assign(ws[1],{seniority:90});Object.assign(ws[2],{seniority:2,provisional:true});Object.assign(ws[3],{seniority:3});
  s=apply(s,{type:'correction',worker:ws[0].id,shift:e.id,hours:8,reason:'Current hours test'});
  assert.deepEqual(replacementQueue(s,a).map(w=>w.id),[ws[3].id,ws[1].id,ws[2].id,ws[0].id]);
+});
+
+test('dated canvas sheet keeps opening balances and per-shift charges, including reversals',()=>{
+ let s=setup(['A'],['thu','satday','sunday']);const id=s.current,e=nextShift(s)!,w=queue(s,e)[0];
+ s=apply(s,{type:'respond',shift:e.id,worker:w.id,kind:'refuse'});
+ let sheet=canvasSheet(s,id),row=sheet.rows.find(r=>r.worker.id===w.id)!;
+ assert.equal(sheet.start,'2026-09-17');assert.equal(sheet.end,'2026-09-21');assert.equal(row.opening,w.starting);assert.equal(row.ending,w.starting+8);assert.equal(row.cells[0].entries[0].kind,'Refused');
+ const originalName=w.name;s.workers.find(x=>x.id===w.id)!.name='Renamed later';assert.equal(canvasSheet(s,id).rows.find(r=>r.worker.id===w.id)!.worker.name,originalName);
+ s=apply(s,{type:'canvasDate',canvas:id,date:'2026-09-15'});assert.equal(canvasSheet(s,id).canvas.canvassedOn,'2026-09-15');
+ s=apply(s,{type:'cancel',shifts:[e.id],reason:'Canceled'});row=canvasSheet(s,id).rows.find(r=>r.worker.id===w.id)!;assert.equal(row.ending,w.starting);assert.equal(row.cells[0].entries.length,2);
+ s.charges.push({id:'other-canvas',worker:w.id,shift:'unrelated',kind:'Accepted',hours:8});assert.equal(canvasSheet(s,id).rows.find(r=>r.worker.id===w.id)!.ending,w.starting);
+});
+test('material pickup can be added on any day and uses normal charges, schedule checks and cancellation',()=>{
+ let s=setup(['A'],[]);s.shifts.forEach(e=>{e.canceled=true;e.closed=true;});
+ const command={type:'extraShift',canvas:s.current,workType:'Material pickup',date:'2026-09-23',hour:6,required:2,location:'Yard'};
+ s=apply(s,command);const e=nextShift(s)!;assert.equal(e.type,'Material pickup');assert.equal(e.group,undefined);assert.equal(canvasSheet(s,s.current).end,'2026-09-23');
+ const w=queue(s,e)[0],before=total(s,w.id);s=apply(s,{type:'respond',shift:e.id,worker:w.id,kind:'accept',location:'Yard'});assert.equal(total(s,w.id),before+8);
+ const r=queue(s,e)[0],hours=total(s,r.id);s=apply(s,{type:'respond',shift:e.id,worker:r.id,kind:'refuse'});assert.equal(total(s,r.id),hours+8);
+ assert.throws(()=>apply(s,command),/already listed/);s=apply(s,{type:'cancel',shifts:[e.id],reason:'Canceled pickup'});assert.equal(total(s,w.id),before);assert.equal(total(s,r.id),hours);
+ s=apply(s,{...command,workType:'Banks',date:'2026-09-24'});assert.equal(s.shifts.at(-1)!.end-s.shifts.at(-1)!.start,8*H);
 });

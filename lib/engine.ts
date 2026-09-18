@@ -75,6 +75,8 @@ export type State = {
         date: string;
         reviewed: boolean;
         baseline: Record<string, number>;
+        canvassedOn?: string;
+        roster?: Worker[];
     }[];
     current: string;
     reviewed: boolean;
@@ -158,6 +160,24 @@ export function replacementQueue(s: State, a: Adjustment) {
         && !intervalConflict(work(s,w,e),{start:e.start,end:e.end,source:e.type}))
         .sort((a,b)=>compare(s,a,b));
 }
+export function canvasSheet(s: State, id: string) {
+    const canvas=s.canvases.find(c=>c.id===id);
+    assert(canvas,'Select a saved canvas.');
+    const shifts=s.shifts.filter(e=>e.canvas===id);
+    const roster=canvas.roster ? [...canvas.roster] : s.workers.filter(w=>w.id in canvas.baseline);
+    for(const w of s.workers)if(!roster.some(r=>r.id===w.id)&&s.charges.some(c=>c.worker===w.id&&shifts.some(e=>e.id===c.shift)))roster.push(w);
+    const rows=roster.map(w=>{
+        const opening=canvas.baseline[w.id] ?? w.starting;
+        let running=opening;
+        const cells=shifts.map(e=>{
+            const entries=s.charges.filter(c=>c.worker===w.id&&c.shift===e.id);
+            const hours=entries.reduce((n,c)=>n+c.hours,0);running+=hours;
+            return {shift:e.id,hours,running,entries};
+        });
+        return {worker:w,opening,cells,ending:running};
+    });
+    return {canvas,shifts,rows,start:shifts.length?localDate(Math.min(...shifts.map(e=>e.start))):canvas.date,end:shifts.length?localDate(Math.max(...shifts.map(e=>e.end))):canvas.date};
+}
 function log(s: State, text: string) { s.history.push({ id: uid(), at: new Date().toISOString(), text }); }
 function charge(s: State, worker: string, shift: string, kind: string, hours: number, extra: Partial<Charge> = {}) { s.charges.push({ id: uid(), worker, shift, kind, hours, ...extra }); }
 function reverse(s: State, c: Charge) { if (c.reverses || s.charges.some(x => x.reverses === c.id))
@@ -202,6 +222,24 @@ export function apply(original: State, cmd: any): State {
     const shift = (id: string) => { const e = s.shifts.find(x => x.id === id); assert(e, 'Shift not found.'); return e; };
     const reason = () => { assert(typeof cmd.reason === 'string' && cmd.reason.trim(), 'Enter a reason.'); return cmd.reason.trim(); };
     switch (cmd.type) {
+        case 'canvasDate': {
+            const c=s.canvases.find(c=>c.id===cmd.canvas);assert(c,'Select a saved canvas.');
+            assert(/^\d{4}-\d{2}-\d{2}$/.test(cmd.date)&&localDate(at(cmd.date,12))===cmd.date,'Enter a valid canvassing date.');
+            c.canvassedOn=cmd.date;log(s,`Set canvassing date for weekend ${c.date} to ${cmd.date}.`);break;
+        }
+        case 'extraShift': {
+            const c=s.canvases.find(c=>c.id===cmd.canvas);assert(c,'Select the canvas this work belongs to.');
+            assert(['Banks','Material pickup'].includes(cmd.workType),'Choose banks or material pickup.');
+            assert(/^\d{4}-\d{2}-\d{2}$/.test(cmd.date)&&localDate(at(cmd.date,12))===cmd.date,'Enter a valid work date.');
+            assert([6,14,22].includes(cmd.hour),'Choose a shift start time.');
+            assert(Number.isInteger(cmd.required)&&cmd.required>0&&cmd.required<=100,'Enter 1–100 positions.');
+            assert(typeof cmd.location==='string'&&cmd.location.trim(),'Enter a location.');
+            assert(!s.shifts.some(e=>e.canvas===c.id&&!e.canceled&&e.type===cmd.workType&&e.start===at(cmd.date,cmd.hour)&&e.locations.some(l=>l.name===cmd.location.trim())),'This work is already listed.');
+            const e:Shift={id:uid(),canvas:c.id,type:cmd.workType,start:at(cmd.date,cmd.hour),end:at(cmd.hour===22?dayAdd(cmd.date,1):cmd.date,cmd.hour===22?6:cmd.hour+8),locations:[{name:cmd.location.trim(),required:cmd.required}],closed:false,canceled:false};
+            if(cmd.workType==='Banks'&&cmd.hour===22){const d=weekday(cmd.date);if(d===4||d===5)e.group='FS';if(d===6||d===0)e.group='SM';}
+            s.shifts.push(e);s.current=c.id;
+            log(s,`Added ${e.type}, ${label(e)}, ${cmd.required} positions at ${cmd.location.trim()} to weekend ${c.date}.`);break;
+        }
         case 'replacementOutside': {
             const a=s.adjustments.find(a=>a.id===cmd.adjustment&&!a.canceled);
             assert(a&&!a.replacement,'Select an unfilled call-out.');
@@ -304,7 +342,9 @@ export function apply(original: State, cmd: any): State {
             assert(new Set(cmd.locations.map((l: string) => l.trim().toLowerCase())).size === cmd.locations.length, 'Location names must be unique.');
             const id = uid();
             s.current = id;
-            s.canvases.push({ id, date: cmd.date, reviewed: true, baseline: Object.fromEntries(s.workers.map(w => [w.id, total(s, w.id)])) });
+            const canvassedOn=cmd.canvassedOn || localDate(Date.now());
+            assert(/^\d{4}-\d{2}-\d{2}$/.test(canvassedOn)&&localDate(at(canvassedOn,12))===canvassedOn,'Enter a valid canvassing date.');
+            s.canvases.push({ id, date: cmd.date, canvassedOn, roster:structuredClone(s.workers), reviewed: true, baseline: Object.fromEntries(s.workers.map(w => [w.id, total(s, w.id)])) });
             const add = (type: string, d: string, h: number, group?: string) => { const endDate = h === 22 ? dayAdd(d, 1) : d; const endHour = h === 22 ? 6 : h + 8; s.shifts.push({ id: uid(), canvas: id, type, start: at(d, h), end: at(endDate, endHour), group, locations: type === 'Banks' ? [{ name: 'Banks', required: 18 }] : cmd.locations.map((name: string) => ({ name: name.trim(), required: 2 })), closed: false, canceled: false }); };
             const banks = cmd.banks || [];
             if (banks.includes('thu'))

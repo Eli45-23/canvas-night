@@ -363,5 +363,5 @@ test('Sept. 18 paper roster uses the exact photographed starting hours and exclu
     ];
     assert.equal(SEPT_18_ROSTER.length,42);
     assert.deepEqual(SEPT_18_ROSTER.map(w=>[w.seniority,w.name,w.hours,w.rdo]),expected);
-    assert.equal(SEPT_18_ROSTER.some(w=>w.name==='A. Majer CDL'),false);
+    assert.equal(SEPT_18_ROSTER.map(w=>String(w.name)).includes('A. Majer CDL'),false);
 });

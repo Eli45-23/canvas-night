@@ -62,6 +62,7 @@ export type Adjustment = {
     canceled: boolean;
 };
 export type State = {
+    notHere?: {id:string;worker:string;canvas:string;shift:string;active:boolean;responseCount:number}[];
     workers: Worker[];
     shifts: Shift[];
     responses: Response[];
@@ -140,7 +141,8 @@ export function intervalConflict(intervals: Interval[], candidate: Interval) { i
     if ((includesCandidate||nextIncludesCandidate) && b.end - b.start >= 16 * H && next && next.start - b.end < 8 * H)
         return 'Eight hours off are required after sixteen consecutive hours.';
 } return ''; }
-export function eligible(s: State, w: Worker, e: Shift, ignore?: string) { if (!w.active)
+export function eligible(s: State, w: Worker, e: Shift, ignore?: string) { if (!ignore && (s.notHere || []).some(n=>n.active&&n.worker===w.id&&n.canvas===e.canvas))
+    return 'Not here — skipped for this entire canvas; no hours charged.'; if (!w.active)
     return 'Worker is inactive.'; if (e.group && w.rdo !== e.group)
     return 'Different RDO group for this banks offer.'; if (s.responses.some(r => r.worker === w.id && r.shift === e.id && r.active && r.id !== ignore))
     return 'Already answered this shift.'; return intervalConflict(work(s, w, e, ignore), { start: e.start, end: e.end, source: e.type }); }
@@ -189,6 +191,25 @@ export function apply(original: State, cmd: any): State {
     const shift = (id: string) => { const e = s.shifts.find(x => x.id === id); assert(e, 'Shift not found.'); return e; };
     const reason = () => { assert(typeof cmd.reason === 'string' && cmd.reason.trim(), 'Enter a reason.'); return cmd.reason.trim(); };
     switch (cmd.type) {
+        case 'notHere': {
+            const e=nextShift(s);
+            assert(e&&e.id===cmd.shift,'This is not the current shift.');
+            assert(!chipsBlocked(s,e),'Secure chip-out coverage before remaining banks.');
+            const w=queue(s,e)[0];
+            assert(w&&w.id===cmd.worker,'The next worker changed. Reload before recording Not here.');
+            (s.notHere ||= []).push({id:uid(),worker:w.id,canvas:e.canvas,shift:e.id,active:true,responseCount:s.responses.length});
+            log(s,`${w.name}: Not here. Skipped for the entire canvas starting ${label(e)}. No hours added or subtracted; earlier assignments remain recorded.`);
+            break;
+        }
+        case 'restoreHere': {
+            const n=(s.notHere||[]).find(n=>n.id===cmd.id&&n.active&&n.canvas===s.current);
+            assert(n,'Active Not here entry not found for this canvas.');
+            n.active=false;
+            const e=shift(n.shift);if(!e.canceled)e.closed=false;
+            affected(s,`Review subsequent offers after restoring ${worker(n.worker).name} to this canvas. Existing assignments are preserved.`);
+            log(s,`Undid Not here for ${worker(n.worker).name}; eligible offers resume in hours-and-seniority order. No hours changed.`);
+            break;
+        }
         case 'worker': {
             const n = parseSeniority(cmd.seniority);
             assert(!s.workers.some(w => w.id !== cmd.id && w.seniority === n.seniority), 'Seniority numbers must be unique, including provisional workers.');
@@ -299,6 +320,11 @@ export function apply(original: State, cmd: any): State {
         }
         case 'undo':
         case 'correct': {
+            if(cmd.type==='undo'){
+                const n=[...(s.notHere||[])].reverse().find(n=>n.active&&n.canvas===s.current);
+                const lastResponse=s.responses.findLastIndex(r=>r.active);
+                if(n&&lastResponse<n.responseCount)return apply(s,{type:'restoreHere',id:n.id});
+            }
             const r = cmd.type === 'undo' ? [...s.responses].reverse().find(r => r.active) : s.responses.find(r => r.id === cmd.response && r.active);
             assert(r, 'No response to reverse.');
             assert(!s.adjustments.some(a => a.response === r.id && !a.canceled), 'Correct the linked absence review first, or cancel the work.');

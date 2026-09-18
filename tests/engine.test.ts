@@ -1,5 +1,36 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+
+test('Not here skips the worker for every shift of only that canvas with no hours or coverage change',()=>{
+    let s=setup(['A'],['thu','fri','sat','sun']);const e=nextShift(s)!,w=queue(s,e)[0];
+    const before=s.workers.map(w=>total(s,w.id));s=apply(s,{type:'notHere',shift:e.id,worker:w.id});
+    assert.deepEqual(s.workers.map(w=>total(s,w.id)),before);assert.equal(s.charges.length,0);assert.equal(s.responses.length,0);
+    assert.equal(coverage(s,e).assigned,0);assert.notEqual(queue(s,e)[0].id,w.id);
+    assert(s.shifts.every(e=>!queue(s,e).some(x=>x.id===w.id)));
+    assert.equal(eligible(s,w,{...e,canvas:'next-week'}),'');
+    const restored=JSON.parse(JSON.stringify(s));assert(!queue(restored,e).some(x=>x.id===w.id));
+    assert.throws(()=>apply(s,{type:'notHere',shift:e.id,worker:w.id}),/next worker/);
+});
+test('undo handles several Not here entries and responses in reverse order without altering skipped workers hours',()=>{
+    let s=setup(),e=nextShift(s)!;const first=queue(s,e)[0];s=apply(s,{type:'notHere',shift:e.id,worker:first.id});
+    const second=queue(s,e)[0];s=apply(s,{type:'notHere',shift:e.id,worker:second.id});
+    const third=queue(s,e)[0];s=respond(s,'refuse');s=apply(s,{type:'undo'});
+    assert.equal(total(s,third.id),third.starting);assert.equal(s.notHere!.filter(n=>n.active).length,2);
+    s=apply(s,{type:'undo'});assert.equal(queue(s,e)[0].id,second.id);assert.equal(s.notHere!.filter(n=>n.active).length,1);
+    s=apply(s,{type:'undo'});assert.equal(queue(s,e)[0].id,first.id);assert.equal(total(s,first.id),first.starting);
+});
+test('canceling the shift where Not here was recorded does not bring that worker back in the same canvas',()=>{
+    let s=setup(),e=nextShift(s)!,w=queue(s,e)[0];s=apply(s,{type:'notHere',shift:e.id,worker:w.id});
+    s=apply(s,{type:'cancel',shifts:[e.id],reason:'Work withdrawn'});
+    assert(s.notHere![0].active);assert(s.shifts.every(e=>!queue(s,e).some(x=>x.id===w.id)));assert.equal(total(s,w.id),w.starting);
+});
+test('Not here retains earlier assignments and charges for the same worker',()=>{
+    let s=setup(['A']);s=respond(s);const assignment=s.responses[0],w=s.workers.find(w=>w.id===assignment.worker)!;
+    s=respond(s);const e=nextShift(s)!;s.workers.forEach(x=>{if(x.id!==w.id)x.starting+=1000;});
+    assert.equal(queue(s,e)[0].id,w.id);const before=total(s,w.id);s=apply(s,{type:'notHere',shift:e.id,worker:w.id});
+    assert(s.responses.find(r=>r.id===assignment.id)!.active);assert.equal(total(s,w.id),before);
+    assert.equal(eligible(s,w,s.shifts[0],assignment.id),'');
+});
 import { seed, apply, total, queue, nextShift, coverage, eligible, at, dayAdd, intervalConflict, H, parseSeniority, chipsBlocked, cancellationPreview, type State, type Shift } from '../lib/engine.ts';
 
 test('correct a refusal to acceptance without charging twice or reshuffling other responses',()=>{

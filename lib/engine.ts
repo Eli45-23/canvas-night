@@ -131,7 +131,7 @@ export function label(shift: {
 export function seed(): State { return { workers: Array.from({ length: 46 }, (_, i) => ({ id: `sample-${i + 1}`, name: `Sample Worker ${String(i + 1).padStart(2, '0')}`, starting: Math.floor(i / 6) * 8, seniority: i + 1, provisional: i % 7 === 6, rdo: i < 23 ? 'FS' : 'SM', days: i < 23 ? [0, 1, 2, 3, 6] : [1, 2, 3, 4, 5], overrides: [], active: true })), shifts: [], responses: [], charges: [], adjustments: [], canvases: [], current: '', reviewed: false, history: [], reviews: [] }; }
 // FS off Thursday 06:00 through Saturday 22:00: regular starts Sat, Sun, Mon, Tue, Wed.
 export function total(s: State, id: string) { return (s.workers.find(w => w.id === id)?.starting || 0) + s.charges.filter(c => c.worker === id).reduce((a, c) => a + c.hours, 0); }
-const baselineName = (name: string) => name.trim().toLocaleLowerCase('en-US');
+const baselineName = (name: string) => name.trim().toLowerCase();
 export function baselineResetPreview(s: State) {
     const errors: string[] = [];
     if (s.baselineResetArchive) errors.push('The Sept. 18 baseline reset was already applied.');

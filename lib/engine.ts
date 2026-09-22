@@ -472,8 +472,19 @@ export function apply(original: State, cmd: any): State {
             const old = cmd.id ? worker(cmd.id) : null;
             const w = { id: old?.id || uid(), name: cmd.name.trim(), starting: old?.starting ?? cmd.starting, ...n, rdo: cmd.rdo, days: [...new Set<number>(cmd.days)], overrides: cmd.overrides, active: cmd.active !== false };
             if (old) {
-                assert(cmd.starting === old.starting || !s.charges.some(c => c.worker === old.id), 'Use an hours correction once charges exist.');
-                w.starting = cmd.starting;
+                assert(cmd.starting === old.starting, 'Starting hours are preserved. Use Current overtime hours to make a correction.');
+                if (cmd.currentHours !== undefined) {
+                    assert(Number.isFinite(cmd.currentHours) && cmd.currentHours >= 0, 'Current hours must be zero or greater.');
+                    const before = total(s, old.id), delta = cmd.currentHours - before;
+                    if (delta !== 0) {
+                        // A balance correction is independent of any cancellable work assignment.
+                        const start = Date.now();
+                        const e: Shift = { id: uid(), canvas: 'reconciliation', type: 'Worker hours correction', start, end: start + 8 * H, locations: [{ name: 'Current hours', required: 0 }], closed: true, canceled: false };
+                        s.shifts.push(e);
+                        charge(s, old.id, e.id, 'Correction', delta);
+                        log(s, `${w.name}: current overtime hours corrected from ${before} to ${cmd.currentHours} (${delta > 0 ? '+' : ''}${delta} hours) in Edit worker. Starting hours and prior history preserved.`);
+                    }
+                }
                 s.workers[s.workers.indexOf(old)] = w;
                 affected(s, `Review decisions involving ${w.name}: roster or regular schedule changed.`);
             }

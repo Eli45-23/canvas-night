@@ -496,3 +496,59 @@ test('paper TOTAL reconciliation is all-or-nothing when the current roster does 
     assert.throws(()=>apply(s,{type:'syncSept21SheetTotals'}));
     assert.deepEqual(s,before);
 });
+
+for (const delta of [8, -8, 0]) test(`Edit worker current hours: ${delta > 0 ? '+' : ''}${delta} preserves starting hours and prior records`, () => {
+    let s = seed();
+    s.workers[0].starting = 528;
+    s = apply(s, { type: 'prior', worker: 'sample-1', key: 'existing acceptance', date: '2026-09-11', hour: 22, reason: 'Paper record' });
+    s = apply(s, { type: 'correction', worker: 'sample-1', shift: s.shifts[0].id, hours: 8, reason: 'Existing correction' });
+    const w = s.workers[0], snapshot = structuredClone(s);
+    assert.equal(total(s, w.id), 544);
+    const command = { ...w, type: 'worker', seniority: seniorityLabel(w), currentHours: 544 + delta };
+    const next = apply(s, command);
+    assert.equal(total(next, w.id), 544 + delta);
+    assert.equal(next.workers[0].starting, 528);
+    assert.deepEqual(next.charges.slice(0, s.charges.length), s.charges);
+    assert.deepEqual(next.history.slice(0, s.history.length), s.history);
+    for (const key of ['responses', 'adjustments', 'canvases'] as const) assert.deepEqual(next[key], s[key]);
+    assert.deepEqual(next.shifts.slice(0, s.shifts.length), s.shifts);
+    assert.deepEqual(s, snapshot);
+    assert.equal(next.charges.length, s.charges.length + (delta === 0 ? 0 : 1));
+    assert.equal(next.shifts.length, s.shifts.length + (delta === 0 ? 0 : 1));
+    if (delta !== 0) {
+        const correction = next.charges.at(-1)!;
+        assert.equal(correction.kind, 'Correction');
+        assert.equal(correction.hours, delta);
+        assert.equal(correction.worker, w.id);
+        assert.notEqual(correction.shift, s.shifts[0].id);
+        assert(next.history.some(h => h.text.includes(`from 544 to ${544 + delta}`)));
+    }
+    const again = apply(next, command);
+    assert.deepEqual(again.charges, next.charges, 'Saving the same target twice must not charge twice');
+});
+
+test('Edit worker corrections immediately change eligible ranking in both directions', () => {
+    let s = setup();
+    const e = nextShift(s)!, w = queue(s, e)[0];
+    const command = { ...w, type: 'worker', seniority: seniorityLabel(w) };
+    s = apply(s, { ...command, currentHours: 8 });
+    assert.notEqual(queue(s, e)[0].id, w.id);
+    s = apply(s, { ...command, currentHours: 0 });
+    assert.equal(queue(s, e)[0].id, w.id);
+    assert.deepEqual(s.charges.filter(c => c.worker === w.id).map(c => c.hours), [8, -8]);
+    assert.equal(s.workers.find(x => x.id === w.id)!.starting, 0);
+});
+
+test('Edit worker validates current totals atomically and protects original starting hours without ledger entries', () => {
+    const s = seed(), w = s.workers[0], snapshot = structuredClone(s);
+    const command = { ...w, type: 'worker', seniority: seniorityLabel(w) };
+    for (const currentHours of [-1, NaN, Infinity, null, '', '552']) {
+        assert.throws(() => apply(s, { ...command, currentHours }), /Current hours/);
+    }
+    assert.throws(() => apply(s, { ...command, starting: 8, currentHours: 8 }), /Starting hours are preserved/);
+    assert.deepEqual(s, snapshot);
+    const next = apply(s, { ...command, currentHours: 0.25 });
+    assert.equal(total(next, w.id), 0.25);
+    assert.equal(next.workers[0].starting, w.starting);
+    assert.deepEqual(apply(s, { ...command, name: 'Renamed worker' }).charges, []);
+});

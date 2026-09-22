@@ -31,7 +31,7 @@ test('Not here retains earlier assignments and charges for the same worker',()=>
     assert(s.responses.find(r=>r.id===assignment.id)!.active);assert.equal(total(s,w.id),before);
     assert.equal(eligible(s,w,s.shifts[0],assignment.id),'');
 });
-import { seed, apply, total, canvasSheet, sheetShiftsForGroup, sheetShiftSectionsForGroup, replacementQueue, lateAvailableQueue, queue, nextShift, coverage, eligible, at, dayAdd, intervalConflict, H, parseSeniority, chipsBlocked, cancellationPreview, scheduleReviews, baselineResetPreview, SEPT_18_BASELINE, SEPT_18_ROSTER, seniorityLabel, compareSeniority, type State, type Shift } from '../lib/engine.ts';
+import { seed, apply, total, canvasSheet, sheetShiftsForGroup, sheetShiftSectionsForGroup, replacementQueue, lateAvailableQueue, queue, nextShift, coverage, eligible, at, dayAdd, intervalConflict, H, parseSeniority, chipsBlocked, cancellationPreview, scheduleReviews, baselineResetPreview, sheetTotalsPreview, SEPT_18_BASELINE, SEPT_18_ROSTER, SEPT_21_TOTALS, seniorityLabel, compareSeniority, type State, type Shift } from '../lib/engine.ts';
 
 test('correct a refusal to acceptance without charging twice or reshuffling other responses',()=>{
     let s=setup(); s=respond(s,'refuse'); const first=s.responses[0]; s=respond(s);
@@ -444,4 +444,55 @@ test('outside coverage still rejects canceled work and locations with no remaini
     assert.throws(()=>apply(canceled,{type:'outside',shift:e.id,location:'Banks'}),/canceled/);
     while(coverage(s,e,'Banks').remaining>0)s=apply(s,{type:'outside',shift:e.id,location:'Banks'});
     assert.throws(()=>apply(s,{type:'outside',shift:e.id,location:'Banks'}),/No open position/);
+});
+
+
+test('Sept. 21 paper TOTAL reconciliation preserves starting hours and makes all 42 current totals exact',()=>{
+    let s=apply(seed(),{type:'loadSept18Roster'});
+    const starting=new Map(s.workers.map(w=>[w.name,w.starting]));
+    s.history.push({id:'before-sync',at:'2026-09-22T12:00:00.000Z',text:'Existing history stays'});
+    const beforeHistory=structuredClone(s.history);
+    const preview=sheetTotalsPreview(s);
+    assert.equal(preview.errors.length,0);assert.equal(preview.rows.length,42);
+    const next=apply(s,{type:'syncSept21SheetTotals'});
+    assert.equal(next.workers.length,42);
+    assert.equal(next.shifts.filter(e=>e.canvas==='reconciliation').length,1);
+    assert.equal(next.responses.length,0);
+    for(const target of SEPT_21_TOTALS){
+        const w=next.workers.find(w=>w.name===target.name)!;
+        assert(w,'missing '+target.name);
+        assert.equal(w.starting,starting.get(target.name),'starting changed for '+target.name);
+        assert.equal(total(next,w.id),target.hours,'wrong current total for '+target.name);
+        assert.equal(w.rdo,target.rdo);
+    }
+    assert.equal(next.workers.some(w=>w.name==='A. Majer CDL'),false);
+    const raffee=next.workers.find(w=>w.name==='A. Raffee')!;
+    assert.equal(seniorityLabel(raffee),'300P');assert.equal(raffee.starting,640);assert.equal(total(next,raffee.id),664);
+    assert.deepEqual(next.history.slice(0,beforeHistory.length),beforeHistory);
+    assert(next.sheetTotalsSync);
+    assert.equal(next.sheetTotalsSync!.chargeIds.length,SEPT_21_TOTALS.filter(t=>{
+        const w=s.workers.find(w=>w.name===t.name)!;return total(s,w.id)!==t.hours;
+    }).length);
+    assert(next.sheetTotalsSync!.chargeIds.every(id=>next.charges.some(c=>c.id===id&&c.kind==='Correction')));
+    assert.match(next.history.at(-1)!.text,/paper-sheet TOTAL column/);
+    assert.throws(()=>apply(next,{type:'syncSept21SheetTotals'}),/already been reconciled/);
+});
+
+test('Sept. 21 sheet totals are the exact far-right TOTAL values from the supplied paper sheets',()=>{
+    const expected=[
+      ['A. Polyakov',544,'FS'],['G. Campbell',561,'FS'],['L. C. Bibby',521,'FS'],['R. Simon',642,'FS'],['C. Perez',600,'FS'],['P. Sohan',641,'FS'],['J. Valle',634,'FS'],['S. Matthews',568,'FS'],['J. Holley',642,'FS'],['L. Santos',550,'FS'],['B. Shivpaul CDL',624,'FS'],['S. Lewis',640,'FS'],['D. Gabriel',582,'FS'],['G. Mendonca',598,'FS'],['L. Gittens',602,'FS'],['J. Hamilton CDL',638,'FS'],['E. Maloski CDL',632,'FS'],['A. Urbina',624,'FS'],['J. Davilla',609,'FS'],['J. Burke',641,'FS'],['K. Felix',641,'FS'],
+      ['T. Codrington',656,'SM'],['B. Santana',622,'SM'],['M. Mohan',646,'SM'],['R. Metoo',667,'SM'],['V. Campbell',668,'SM'],['N. Cottone',608,'SM'],['D. Champagnie',618,'SM'],['E. Colon',648,'SM'],['B. Mistry',582,'SM'],['E. Lawes',642,'SM'],['D. Ahel',664,'SM'],['B. Green',666,'SM'],['W. Gordon',618,'SM'],['J. Quin',658,'SM'],['J. Prince',673,'SM'],['C. Allen CDL',672,'SM'],['A. Stadnyk CDL',660,'SM'],['T. Vidal',647,'SM'],['P. Wessels CDL',647,'SM'],['D. Martinez',606,'SM'],['A. Raffee',664,'SM'],
+    ];
+    assert.equal(SEPT_21_TOTALS.length,42);
+    assert.deepEqual(SEPT_21_TOTALS.map(w=>[w.name,w.hours,w.rdo]),expected);
+    assert.equal(SEPT_21_TOTALS.map(w=>String(w.name)).includes('A. Majer CDL'),false);
+});
+
+test('paper TOTAL reconciliation is all-or-nothing when the current roster does not match the 42-worker sheet',()=>{
+    let s=apply(seed(),{type:'loadSept18Roster'});
+    s.workers[0].name='Wrong Worker';
+    const before=structuredClone(s),preview=sheetTotalsPreview(s);
+    assert(preview.errors.length>0);
+    assert.throws(()=>apply(s,{type:'syncSept21SheetTotals'}));
+    assert.deepEqual(s,before);
 });

@@ -189,15 +189,15 @@ body {
   z-index: -1;
   pointer-events: none;
   background: url('/bank-gang-logo.png') center center / min(76vw, 720px) auto no-repeat;
-  filter: grayscale(1) invert(1);
-  opacity: .10;
+  filter: invert(1) hue-rotate(180deg) saturate(1.4);
+  opacity: .16;
 }
 .workspace > [data-slot="tabs"] > [data-slot="tabs-content"] section,
 .workspace > [data-slot="tabs"] > [data-slot="tabs-content"] .canvas-grid section {
   background-color: rgba(255,255,255,.80);
 }
 @media (max-width: 600px) {
-  .workspace::before { background-size: 94vw auto; opacity: .07; }
+  .workspace::before { background-size: 94vw auto; opacity: .12; }
 }
 @media print {
   .workspace::before { display: none; }

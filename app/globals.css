@@ -179,3 +179,27 @@ body {
  .hours-sheet .sheet-col-charge{width:6.6%!important}
  .hours-sheet .sheet-col-running{width:6.2%!important}
 }
+
+/* Decorative watermark stays behind all content and never captures input. */
+.workspace { position: relative; isolation: isolate; }
+.workspace::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: url('/bank-gang-logo.png') center center / min(76vw, 720px) auto no-repeat;
+  filter: grayscale(1) invert(1);
+  opacity: .10;
+}
+.workspace > [data-slot="tabs"] > [data-slot="tabs-content"] section,
+.workspace > [data-slot="tabs"] > [data-slot="tabs-content"] .canvas-grid section {
+  background-color: rgba(255,255,255,.80);
+}
+@media (max-width: 600px) {
+  .workspace::before { background-size: 94vw auto; opacity: .07; }
+}
+@media print {
+  .workspace::before { display: none; }
+  .workspace section { background: white !important; }
+}

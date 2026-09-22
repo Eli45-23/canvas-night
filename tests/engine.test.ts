@@ -219,3 +219,14 @@ test('material pickup can be added on any day and uses normal charges, schedule 
  assert.throws(()=>apply(s,command),/already listed/);s=apply(s,{type:'cancel',shifts:[e.id],reason:'Canceled pickup'});assert.equal(total(s,w.id),before);assert.equal(total(s,r.id),hours);
  s=apply(s,{...command,workType:'Banks',date:'2026-09-24'});assert.equal(s.shifts.at(-1)!.end-s.shifts.at(-1)!.start,8*H);
 });
+
+test('checkpoint restores roster and linked charges together and undo restore recovers testing state',()=>{
+ let s=setup(['A'],['thu']);s=apply(s,{type:'saveCheckpoint'});const saved=structuredClone(s),id=s.checkpoint!.id;
+ const e=nextShift(s)!,w=queue(s,e)[0];s=apply(s,{type:'respond',shift:e.id,worker:w.id,kind:'accept',location:'Banks'});
+ s=apply(s,{type:'worker',...s.workers[0],name:'Test name',seniority:String(w.seniority)});
+ const tested=structuredClone(s);s=apply(s,{type:'restoreCheckpoint',id});
+ assert.deepEqual(s.workers,saved.workers);assert.deepEqual(s.charges,saved.charges);assert.deepEqual(s.responses,saved.responses);assert.equal(total(s,w.id),total(saved,w.id));assert(s.beforeRestore);
+ s=apply(s,{type:'undoRestore'});assert.deepEqual(s.workers,tested.workers);assert.deepEqual(s.charges,tested.charges);assert.deepEqual(s.responses,tested.responses);assert.equal(s.beforeRestore,undefined);
+ assert.throws(()=>apply(s,{type:'restoreCheckpoint',id:'stale'}),/changed/);
+ s=apply(s,{type:'saveCheckpoint'});assert.notEqual(s.checkpoint!.id,id);assert(!('checkpoint' in s.checkpoint!.data));assert(!('beforeRestore' in s.checkpoint!.data));
+});

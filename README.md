@@ -15,6 +15,8 @@ Review actual regular nights carefully. A checked day means the regular shift **
 
 ## Corrections and cancellations
 
+- In **Workers → Edit**, change **Current overtime hours** to the desired total and save. Increases and decreases create a **Correction** ledger entry for the difference and a before/after History record. Starting hours and all previous records are preserved. Saving the same total adds no correction. The corrected total is used immediately for canvassing order.
+
 - **Not here**, beside the next worker’s name, skips that worker for every remaining shift in the current canvas, without adding or subtracting any hours. The mark is saved through refreshes and restarts and does not carry into a different canvas. Earlier assignments and charges remain recorded. Use **Undo last action** immediately, or **Undo not here** in the canvas’s Not here list, to correct an accidental click. The worker then returns in normal hours-and-seniority order.
 
 - **Late availability** in Results fills any position that still shows **Coverage needed** with a worker who was marked **Not here** during that same canvas. The shift does not have to be formally closed as a shortage first. The original Not here entry remains in History; it is not undone. The worker receives a normal accepted-work charge of eight hours, the opening counts as covered immediately, and the assignment must still pass RDO, duplicate-shift, regular-work overlap, sixteen-hour, and rest checks.

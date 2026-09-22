@@ -66,6 +66,7 @@ export type State = {
     replacementCalls?: {id:string;adjustment:string;worker:string;kind:'accept'|'decline';response?:string}[];
     sampleArchive?: { at: string; source: string; state: State };
     baselineResetArchive?: { at: string; source: string; state: State };
+    sheetTotalsSync?: { at: string; source: string; shift: string; chargeIds: string[] };
     notHere?: {id:string;worker:string;canvas:string;shift:string;active:boolean;responseCount:number}[];
     workers: Worker[];
     shifts: Shift[];
@@ -113,6 +114,23 @@ export const SEPT_18_ROSTER = [
     {seniority:'134P',name:'P. Wessels CDL',hours:599,rdo:'SM'}, {seniority:'180P',name:'D. Martinez',hours:606,rdo:'SM'}, {seniority:'300P',name:'A. Raffee',hours:640,rdo:'SM'},
 ] as const;
 export const SEPT_18_BASELINE = SEPT_18_ROSTER.map(({name,hours,rdo})=>({name,hours,rdo}));
+export const SEPT_21_TOTALS = [
+    {name:'A. Polyakov',hours:544,rdo:'FS'}, {name:'G. Campbell',hours:561,rdo:'FS'}, {name:'L. C. Bibby',hours:521,rdo:'FS'},
+    {name:'R. Simon',hours:642,rdo:'FS'}, {name:'C. Perez',hours:600,rdo:'FS'}, {name:'P. Sohan',hours:641,rdo:'FS'},
+    {name:'J. Valle',hours:634,rdo:'FS'}, {name:'S. Matthews',hours:568,rdo:'FS'}, {name:'J. Holley',hours:642,rdo:'FS'},
+    {name:'L. Santos',hours:550,rdo:'FS'}, {name:'B. Shivpaul CDL',hours:624,rdo:'FS'}, {name:'S. Lewis',hours:640,rdo:'FS'},
+    {name:'D. Gabriel',hours:582,rdo:'FS'}, {name:'G. Mendonca',hours:598,rdo:'FS'}, {name:'L. Gittens',hours:602,rdo:'FS'},
+    {name:'J. Hamilton CDL',hours:638,rdo:'FS'}, {name:'E. Maloski CDL',hours:632,rdo:'FS'}, {name:'A. Urbina',hours:624,rdo:'FS'},
+    {name:'J. Davilla',hours:609,rdo:'FS'}, {name:'J. Burke',hours:641,rdo:'FS'}, {name:'K. Felix',hours:641,rdo:'FS'},
+    {name:'T. Codrington',hours:656,rdo:'SM'}, {name:'B. Santana',hours:622,rdo:'SM'}, {name:'M. Mohan',hours:646,rdo:'SM'},
+    {name:'R. Metoo',hours:667,rdo:'SM'}, {name:'V. Campbell',hours:668,rdo:'SM'}, {name:'N. Cottone',hours:608,rdo:'SM'},
+    {name:'D. Champagnie',hours:618,rdo:'SM'}, {name:'E. Colon',hours:648,rdo:'SM'}, {name:'B. Mistry',hours:582,rdo:'SM'},
+    {name:'E. Lawes',hours:642,rdo:'SM'}, {name:'D. Ahel',hours:664,rdo:'SM'}, {name:'B. Green',hours:666,rdo:'SM'},
+    {name:'W. Gordon',hours:618,rdo:'SM'}, {name:'J. Quin',hours:658,rdo:'SM'}, {name:'J. Prince',hours:673,rdo:'SM'},
+    {name:'C. Allen CDL',hours:672,rdo:'SM'}, {name:'A. Stadnyk CDL',hours:660,rdo:'SM'}, {name:'T. Vidal',hours:647,rdo:'SM'},
+    {name:'P. Wessels CDL',hours:647,rdo:'SM'}, {name:'D. Martinez',hours:606,rdo:'SM'}, {name:'A. Raffee',hours:664,rdo:'SM'},
+] as const;
+export const SHEET_TOTALS_SOURCE = 'Paper overtime sheets for September 18–21, 2026 · far-right TOTAL column';
 const uid = () => crypto.randomUUID();
 function assert(ok: unknown, msg: string): asserts ok { if (!ok)
     throw new Error(msg); }
@@ -157,6 +175,28 @@ export function baselineResetPreview(s: State) {
         const w=matches[0];
         if(w.rdo!==target.rdo) errors.push(`${target.name} is in RDO group ${w.rdo}; baseline expects ${target.rdo}.`);
         return [{worker:w,current:total(s,w.id),target:target.hours,difference:target.hours-total(s,w.id)}];
+    });
+    return {rows,errors};
+}
+export function sheetTotalsPreview(s: State) {
+    const errors:string[]=[];
+    if(s.sheetTotalsSync) errors.push('The Sept. 21 paper totals have already been reconciled.');
+    if(s.workers.length!==SEPT_21_TOTALS.length) errors.push(`Current roster has ${s.workers.length} workers; expected ${SEPT_21_TOTALS.length}.`);
+    const byName=new Map<string,Worker[]>();
+    for(const w of s.workers){const key=baselineName(w.name),list=byName.get(key)||[];list.push(w);byName.set(key,list);}
+    const targetNames=new Set(SEPT_21_TOTALS.map(t=>baselineName(t.name)));
+    const extras=s.workers.filter(w=>!targetNames.has(baselineName(w.name)));
+    if(extras.length) errors.push(`Workers not in the Sept. 21 paper totals: ${extras.map(w=>w.name).join(', ')}.`);
+    const rows=SEPT_21_TOTALS.flatMap(target=>{
+        const matches=byName.get(baselineName(target.name))||[];
+        if(matches.length!==1){
+            errors.push(matches.length===0?`Missing paper-sheet worker: ${target.name}.`:`Duplicate roster name for paper-sheet worker: ${target.name}.`);
+            return [];
+        }
+        const w=matches[0];
+        if(w.rdo!==target.rdo) errors.push(`${target.name} is in RDO group ${w.rdo}; paper sheet expects ${target.rdo}.`);
+        const current=total(s,w.id);
+        return [{worker:w,current,target:target.hours,difference:target.hours-current}];
     });
     return {rows,errors};
 }
@@ -288,6 +328,23 @@ export function apply(original: State, cmd: any): State {
     const shift = (id: string) => { const e = s.shifts.find(x => x.id === id); assert(e, 'Shift not found.'); return e; };
     const reason = () => { assert(typeof cmd.reason === 'string' && cmd.reason.trim(), 'Enter a reason.'); return cmd.reason.trim(); };
     switch (cmd.type) {
+        case 'syncSept21SheetTotals': {
+            assert(!s.sheetTotalsSync,'The Sept. 21 paper totals have already been reconciled.');
+            const preview=sheetTotalsPreview(s);
+            assert(preview.errors.length===0,preview.errors.join(' '));
+            const e:Shift={id:uid(),canvas:'reconciliation',type:'Paper sheet reconciliation · Sep 18–21',start:at('2026-09-21',6),end:at('2026-09-21',14),locations:[{name:'Paper totals',required:0}],closed:true,canceled:false};
+            s.shifts.push(e);
+            const chargeIds:string[]=[];
+            for(const row of preview.rows){
+                if(row.difference===0)continue;
+                const before=s.charges.length;
+                charge(s,row.worker.id,e.id,'Correction',row.difference);
+                chargeIds.push(s.charges[before].id);
+            }
+            s.sheetTotalsSync={at:new Date().toISOString(),source:SHEET_TOTALS_SOURCE,shift:e.id,chargeIds};
+            log(s,`Reconciled current overtime hours to the Sept. 18–21 paper-sheet TOTAL column for ${preview.rows.length} workers. ${chargeIds.length} correction entries were added; starting balances and existing canvas history were preserved.`);
+            break;
+        }
         case 'loadSept18Roster': {
             assert(s.workers.length > 0 && s.workers.every(w => /^sample-\d+$/.test(w.id) && /^Sample Worker \d+$/.test(w.name)), 'The Sept. 18 shop roster can only replace the untouched sample roster.');
             assert(!s.sampleArchive, 'The sample roster has already been replaced.');

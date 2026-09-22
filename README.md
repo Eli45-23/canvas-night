@@ -29,6 +29,10 @@ Review actual regular nights carefully. A checked day means the regular shift **
 
 History retains every response, adjustment, correction, and cancellation. Reversals are additional ledger entries, not erased charges. Review schedule-conflict alerts after changing a regular schedule or earlier decision. The app never silently moves communicated assignments.
 
+## Paper-sheet total reconciliation
+
+After the Sept. 18–21 paper sheets are finalized, open **Workers** and use **Match Sept. 21 sheet totals**. The preview compares each worker's current ledger total with the far-right **TOTAL** column from the paper sheets. Confirming the action keeps the original starting balances and all existing canvas history, then records only the differences as audited **Correction** entries so Current hours exactly match the paper totals. The action is one-time for this sheet set. A. Majer is excluded from the 42-worker roster, and A. Raffee remains 300P with a paper total of 664.
+
 ## Saving and scope
 
 Every completed action saves to the app's database. Refreshing, closing the browser, or restarting the app does not discard a saved canvas. Unsaved form input is not a saved action. If two windows try to save different actions at once, the later request is rejected and asks the operator to reload. A failed save leaves the previous records intact and displays an error.

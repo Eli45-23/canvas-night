@@ -63,6 +63,9 @@ export type Adjustment = {
     canceled: boolean;
 };
 export type State = {
+    checkpoint?: {id:string;at:string;data:CheckpointData};
+    beforeRestore?: {at:string;data:CheckpointData};
+
     replacementCalls?: {id:string;adjustment:string;worker:string;kind:'accept'|'decline';response?:string}[];
     sampleArchive?: { at: string; source: string; state: State };
     baselineResetArchive?: { at: string; source: string; state: State };
@@ -95,6 +98,11 @@ export type State = {
         responseIds?: string[];
     }[];
 };
+type CheckpointData = Omit<State,'checkpoint'|'beforeRestore'|'sampleArchive'|'history'>;
+function checkpointData(s: State): CheckpointData {
+    const {checkpoint,beforeRestore,sampleArchive,history,...data}=structuredClone(s);
+    return data;
+}
 export const H = 3600000;
 export const BASELINE_RESET_SOURCE = 'Shop overtime starting-hour sheets for September 18–21, 2026';
 export const SEPT_18_ROSTER = [
@@ -328,6 +336,25 @@ export function apply(original: State, cmd: any): State {
     const shift = (id: string) => { const e = s.shifts.find(x => x.id === id); assert(e, 'Shift not found.'); return e; };
     const reason = () => { assert(typeof cmd.reason === 'string' && cmd.reason.trim(), 'Enter a reason.'); return cmd.reason.trim(); };
     switch (cmd.type) {
+        case 'saveCheckpoint': {
+            s.checkpoint={id:uid(),at:new Date().toISOString(),data:checkpointData(s)};
+            log(s,`Saved checkpoint for ${s.workers.length} workers, including hours and linked canvas records.`);
+            break;
+        }
+        case 'restoreCheckpoint': {
+            assert(s.checkpoint&&s.checkpoint.id===cmd.id,'The saved checkpoint changed. Reload before restoring.');
+            const before={at:new Date().toISOString(),data:checkpointData(s)};
+            const restored:State={...structuredClone(s.checkpoint.data),history:s.history,sampleArchive:s.sampleArchive,checkpoint:s.checkpoint,beforeRestore:before};
+            log(restored,`Restored roster, hours, and linked canvas records to checkpoint ${s.checkpoint.at}. Later changes were rolled back; the pre-restore state is available through Undo restore.`);
+            return restored;
+        }
+        case 'undoRestore': {
+            assert(s.beforeRestore,'No restore is available to undo.');
+            const restored:State={...structuredClone(s.beforeRestore.data),history:s.history,sampleArchive:s.sampleArchive,checkpoint:s.checkpoint};
+            log(restored,'Undid checkpoint restore; returned to the records saved immediately before restoring.');
+            return restored;
+        }
+
         case 'syncSept21SheetTotals': {
             assert(!s.sheetTotalsSync,'The Sept. 21 paper totals have already been reconciled.');
             const preview=sheetTotalsPreview(s);

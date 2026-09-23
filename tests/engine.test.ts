@@ -31,7 +31,7 @@ test('Not here retains earlier assignments and charges for the same worker',()=>
     assert(s.responses.find(r=>r.id===assignment.id)!.active);assert.equal(total(s,w.id),before);
     assert.equal(eligible(s,w,s.shifts[0],assignment.id),'');
 });
-import { seed, apply, total, canvasSheet, sheetShiftsForGroup, sheetShiftSectionsForGroup, replacementQueue, lateAvailableQueue, queue, nextShift, coverage, eligible, at, dayAdd, intervalConflict, H, parseSeniority, chipsBlocked, cancellationPreview, scheduleReviews, baselineResetPreview, sheetTotalsPreview, SEPT_18_BASELINE, SEPT_18_ROSTER, SEPT_21_TOTALS, seniorityLabel, compareSeniority, type State, type Shift } from '../lib/engine.ts';
+import { seed, apply, total, canvasSheet, sheetShiftsForGroup, sheetShiftSectionsForGroup, replacementQueue, lateAvailableQueue, queue, nextShift, coverage, eligible, at, dayAdd, intervalConflict, H, parseSeniority, chipsBlocked, canvasCancellationPreview, cancellationPreview, scheduleReviews, baselineResetPreview, sheetTotalsPreview, SEPT_18_BASELINE, SEPT_18_ROSTER, SEPT_21_TOTALS, seniorityLabel, compareSeniority, type State, type Shift } from '../lib/engine.ts';
 
 test('correct a refusal to acceptance without charging twice or reshuffling other responses',()=>{
     let s=setup(); s=respond(s,'refuse'); const first=s.responses[0]; s=respond(s);
@@ -562,4 +562,127 @@ test('checkpoint restores roster and linked charges together and undo restore re
  s=apply(s,{type:'undoRestore'});assert.deepEqual(s.workers,tested.workers);assert.deepEqual(s.charges,tested.charges);assert.deepEqual(s.responses,tested.responses);assert.equal(s.beforeRestore,undefined);
  assert.throws(()=>apply(s,{type:'restoreCheckpoint',id:'stale'}),/changed/);
  s=apply(s,{type:'saveCheckpoint'});assert.notEqual(s.checkpoint!.id,id);assert(!('checkpoint' in s.checkpoint!.data));assert(!('beforeRestore' in s.checkpoint!.data));
+});
+
+const cancelWhole = (s: State, canvas=s.current) => apply(s,{type:'cancelCanvas',canvas,reason:'Created by mistake'});
+test('empty canvas removal deletes generated shifts, preserves hours and history, and allows same Friday with a fresh ID',()=>{
+    const s=setup(['A'],['thu','fri','sat','sun']),id=s.current;
+    const before=structuredClone(s),preview=canvasCancellationPreview(s,id);
+    assert.equal(preview.empty,true);assert.equal(preview.action,'delete');assert.equal(preview.shiftCount,11);
+    assert.equal(preview.chargeCount,0);assert.equal(preview.hours,0);
+    const removed=cancelWhole(s);
+    assert.equal(removed.canvases.length,0);assert.equal(removed.shifts.length,0);assert.equal(removed.current,'');
+    assert.deepEqual(removed.workers,s.workers);assert.deepEqual(removed.workers.map(w=>total(removed,w.id)),s.workers.map(w=>total(s,w.id)));
+    assert.deepEqual(removed.history.slice(0,-1),s.history);assert.match(removed.history.at(-1)!.text,/Removed empty canvas for weekend 2026-09-18 created by mistake/);
+    const recreated=apply(apply(removed,{type:'review'}),{type:'setup',date:'2026-09-18',locations:['A']});
+    assert.notEqual(recreated.current,id);assert.deepEqual(s,before);
+});
+test('canvas cancellation requires a reason and an existing canvas without mutating the input',()=>{
+    const s=setup(),before=structuredClone(s);
+    for(const reason of ['', '   ',undefined])assert.throws(()=>apply(s,{type:'cancelCanvas',canvas:s.current,reason}),/reason/);
+    assert.throws(()=>cancelWhole(s,'missing'),/not found/);assert.deepEqual(s,before);
+});
+test('acceptance and refusal charges reverse once while canvas, baseline, roster and historical responses survive',()=>{
+    let s=respond(respond(setup()),'refuse');const id=s.current,original=structuredClone(s);
+    const preview=canvasCancellationPreview(s,id);
+    assert.equal(preview.empty,false);assert.equal(preview.action,'cancel');assert.equal(preview.activeResponses,2);
+    assert.equal(preview.chargeCount,2);assert.equal(preview.hours,16);assert.equal(preview.affectedWorkers.length,2);
+    s=cancelWhole(s);const c=s.canvases[0];
+    assert.equal(c.canceled,true);assert(c.canceledAt);assert.equal(c.cancelReason,'Created by mistake');
+    assert.deepEqual(c.roster,original.canvases[0].roster);assert.deepEqual(c.baseline,original.canvases[0].baseline);
+    assert.equal(s.current,'');assert(s.shifts.every(e=>e.canceled&&e.closed));assert(s.responses.every(r=>!r.active));
+    assert.deepEqual(s.charges.slice(0,2),original.charges);assert.equal(s.responses.length,2);
+    assert.deepEqual(s.workers,original.workers);assert(s.workers.every(w=>total(s,w.id)===w.starting));
+    assert.match(s.history.at(-1)!.text,/Canceled canvas for weekend 2026-09-18. Reversed 16 hours across 2 worker charges. Existing history retained/);
+    const snapshot=structuredClone(s);assert.throws(()=>cancelWhole(s,id),/already canceled/);assert.deepEqual(s,snapshot);
+    assert.throws(()=>apply(s,{type:'selectCanvas',id}),/Active canvas/);
+    assert.throws(()=>apply(s,{type:'extraShift',canvas:id}),/active canvas/);
+    assert.throws(()=>apply(s,{type:'canvasDate',canvas:id,date:'2026-09-22'}),/active saved canvas/);
+    assert.throws(()=>apply(s,{type:'outside',shift:s.shifts[0].id,location:'A'}),/canceled/);
+    assert.throws(()=>apply(s,{type:'reopen',shift:s.shifts[0].id}),/no recorded shortage/);
+    assert.equal(canvasSheet(s,id).rows[0].ending,original.canvases[0].baseline[s.workers[0].id]);
+});
+test('signed corrections reverse, while previously reversed charges and canceled shifts are safely skipped',()=>{
+    let s=respond(setup());s=apply(s,{type:'cancel',shifts:[s.shifts[0].id],reason:'Not needed'});
+    s=apply(s,{type:'correction',shift:s.shifts[1].id,worker:s.workers[0].id,hours:-3,reason:'Correction'});
+    const original=s.charges[0],p=canvasCancellationPreview(s,s.current);
+    assert.equal(p.chargeCount,1);assert.equal(p.hours,-3);
+    s=cancelWhole(s);assert.equal(s.charges.filter(c=>c.reverses===original.id).length,1);
+    assert.equal(total(s,s.workers[0].id),s.workers[0].starting);
+});
+test('queued and applied absence penalties are canceled and replacement calls are invalidated with their charges reversed',()=>{
+    let s=respond(setup());s=apply(s,{type:'absence',response:s.responses[0].id,reason:'No notice'});
+    let a=s.adjustments[0];const w=replacementQueue(s,a)[0];
+    s=apply(s,{type:'replacementRespond',adjustment:a.id,worker:w.id,kind:'accept'});
+    const queued=cancelWhole(s);assert(queued.adjustments[0].canceled);assert(!queued.adjustments[0].applied);
+    assert(queued.replacementCalls![0].canceled);assert(queued.responses.every(r=>!r.active));
+    assert(queued.workers.every(w=>total(queued,w.id)===w.starting));
+    // Secure remaining coverage so the normal next-review command applies the penalty.
+    for(const e of s.shifts)for(const l of e.locations)while(coverage(s,e,l.name).remaining>0)s=apply(s,{type:'outside',shift:e.id,location:l.name});
+    s=apply(s,{type:'review'});assert(s.charges.some(c=>c.kind==='Absence penalty'));
+    const p=canvasCancellationPreview(s,s.current);assert.equal(p.adjustmentCount,1);assert.equal(p.hours,24);
+    s=cancelWhole(s);assert(s.adjustments[0].canceled&&s.adjustments[0].applied);
+    assert(s.workers.every(w=>total(s,w.id)===w.starting));
+});
+test('Not Here and late availability are deactivated, with late assignment hours reversed',()=>{
+    let s=setup();const e=nextShift(s)!,w=queue(s,e)[0];
+    s=apply(s,{type:'notHere',shift:e.id,worker:w.id});
+    s=apply(s,{type:'lateAvailabilityAssign',shift:e.id,worker:w.id,location:'A'});
+    const p=canvasCancellationPreview(s,s.current);assert.equal(p.activeNotHere,1);assert.equal(p.hours,8);
+    const canceled=cancelWhole(s);assert.equal(canceled.notHere![0].active,false);assert.equal(canceled.responses[0].active,false);
+    assert.equal(total(canceled,w.id),w.starting);assert.deepEqual(canceled.workers,s.workers);
+});
+test('outside-only coverage prevents deletion but never changes worker totals',()=>{
+    let s=setup();s=apply(s,{type:'outside',shift:s.shifts[0].id,location:'A'});
+    assert.equal(canvasCancellationPreview(s,s.current).empty,false);
+    const canceled=cancelWhole(s);assert(canceled.canvases[0].canceled);assert(!canceled.responses[0].active);
+    assert.deepEqual(canceled.charges,[]);assert.deepEqual(canceled.workers,s.workers);
+});
+test('undone responses and restored Not Here entries retain audit history',()=>{
+    let s=respond(setup());s=apply(s,{type:'undo'});
+    assert.equal(canvasCancellationPreview(s,s.current).empty,false);assert(cancelWhole(s).canvases[0].canceled);
+    s=setup();const e=nextShift(s)!;s=apply(s,{type:'notHere',shift:e.id,worker:queue(s,e)[0].id});s=apply(s,{type:'undo'});
+    assert.equal(canvasCancellationPreview(s,s.current).empty,false);assert(cancelWhole(s).canvases[0].canceled);
+});
+test('edited openings and extra work count as activity even without responses or charges',()=>{
+    let s=setup();s=apply(s,{type:'opening',shift:s.shifts[0].id,location:'A',reason:'Reduced staffing'});
+    assert.equal(canvasCancellationPreview(s,s.current).empty,false);assert(cancelWhole(s).canvases[0].canceled);
+    s=setup();s=apply(s,{type:'extraShift',canvas:s.current,workType:'Banks',date:'2026-09-25',hour:6,required:18,location:'Banks'});
+    assert.equal(canvasCancellationPreview(s,s.current).empty,false);
+});
+test('unrelated canvases, prior imports, reconciliation, current selection and worker starting values remain untouched',()=>{
+    let s=apply(seed(),{type:'loadSept18Roster'});s=apply(s,{type:'syncSept21SheetTotals'});
+    s=apply(s,{type:'prior',worker:s.workers[0].id,key:'earlier work',date:'2026-09-11',hour:22,alreadyIncluded:true,reason:'Imported'});
+    s=apply(apply(s,{type:'review'}),{type:'setup',date:'2026-09-18',locations:['A']});const first=s.current;
+    for(const e of s.shifts.filter(e=>e.canvas===first))for(const l of e.locations)while(coverage(s,e,l.name).remaining>0)s=apply(s,{type:'outside',shift:e.id,location:l.name});
+    s=apply(apply(s,{type:'review'}),{type:'setup',date:'2026-09-25',locations:['B']});
+    s=respond(s);const before=structuredClone(s),after=cancelWhole(s,first);
+    assert.equal(after.current,before.current);assert.deepEqual(after.workers,before.workers);assert.deepEqual(after.sheetTotalsSync,before.sheetTotalsSync);
+    assert.deepEqual(after.shifts.filter(e=>e.canvas!==first),before.shifts.filter(e=>e.canvas!==first));
+    const otherIds=new Set(before.shifts.filter(e=>e.canvas!==first).map(e=>e.id));
+    assert.deepEqual(after.charges.filter(c=>otherIds.has(c.shift)),before.charges.filter(c=>otherIds.has(c.shift)));
+    assert.deepEqual(after.responses.filter(r=>otherIds.has(r.shift)),before.responses.filter(r=>otherIds.has(r.shift)));
+    assert.deepEqual(after.canvases[1],before.canvases[1]);assert.deepEqual(after.history.slice(0,-1),before.history);
+});
+test('canceled canvases allow new IDs for the same Friday; legacy active canvases still block duplicate Fridays',()=>{
+    let s=setup(),id=s.current;assert.equal(s.canvases[0].canceled,undefined);
+    for(const e of s.shifts)for(const l of e.locations)while(coverage(s,e,l.name).remaining>0)s=apply(s,{type:'outside',shift:e.id,location:l.name});
+    s=apply(s,{type:'review'});assert.throws(()=>apply(s,{type:'setup',date:'2026-09-18',locations:['A']}),/already has a canvas/);
+    s=cancelWhole(s);s=apply(s,{type:'setup',date:'2026-09-18',locations:['A']});
+    assert.notEqual(s.current,id);assert.equal(s.canvases.length,2);assert.equal(s.canvases[0].date,s.canvases[1].date);
+    s=JSON.parse(JSON.stringify(s));assert(s.canvases[0].canceled);assert.equal(s.canvases[1].canceled,undefined);
+});
+
+test('legacy dated-work edits retain the canvas even without the activity marker',()=>{
+    let s=setup();s=apply(s,{type:'extraShift',canvas:s.current,workType:'Banks',date:'2026-09-25',hour:6,required:18,location:'Banks'});
+    delete s.canvases[0].activityRecorded;
+    assert.equal(canvasCancellationPreview(s,s.current).empty,false);assert(cancelWhole(s).canvases[0].canceled);
+});
+test('canceling a canvas does not restore starting hours reclassified for an included replacement',()=>{
+    let s=respond(setup());const r=s.responses[0],e=s.shifts[0];
+    const w=queue(s,e)[0];s.workers.find(x=>x.id===w.id)!.starting=24;
+    s=apply(s,{type:'absence',response:r.id,replacement:w.id,replacementIncluded:true,reason:'Imported replacement'});
+    const starting=s.workers.find(x=>x.id===w.id)!.starting;assert.equal(starting,16);
+    const canceled=cancelWhole(s);assert.equal(canceled.workers.find(x=>x.id===w.id)!.starting,starting);
+    assert.equal(total(canceled,w.id),starting);assert.deepEqual(canceled.workers,s.workers);
 });

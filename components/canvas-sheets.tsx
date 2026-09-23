@@ -4,9 +4,9 @@ import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import {canvasSheet,sheetShiftSectionsForGroup,label,compareSeniority,seniorityLabel,type State} from '@/lib/engine';
 
-export function CanvasSheets({state,act,busy}:{state:State;act:(command:any)=>Promise<boolean>;busy:boolean}) {
- const [chosen,setChosen]=useState(''),[group,setGroup]=useState('all'),[search,setSearch]=useState(''),[date,setDate]=useState('');
- const id=chosen||state.current||state.canvases.at(-1)?.id;
+export function CanvasSheets({state,act,busy,initialCanvas=''}:{initialCanvas?:string;state:State;act:(command:any)=>Promise<boolean>;busy:boolean}) {
+ const [chosen,setChosen]=useState(initialCanvas),[group,setGroup]=useState('all'),[search,setSearch]=useState(''),[date,setDate]=useState('');
+ const id=(state.canvases.some(c=>c.id===chosen)?chosen:'')||state.current||state.canvases.at(-1)?.id;
  if(!id)return <section><h2>Dated canvas sheets</h2><p>Create a canvas to start its hours sheet.</p></section>;
  const report=canvasSheet(state,id),c=report.canvas;
  const fmt=(d:string)=>new Date(d+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
@@ -17,12 +17,12 @@ export function CanvasSheets({state,act,busy}:{state:State;act:(command:any)=>Pr
   <div className="sheet-controls">
    <h2>Dated canvas sheets</h2>
    <div className="columns">
-    <label className="field"><span>Saved overtime period</span><select value={id} onChange={e=>{setChosen(e.target.value);setDate('');}}>{[...state.canvases].reverse().map(c=>{const r=canvasSheet(state,c.id);return <option value={c.id} key={c.id}>{fmt(r.start)} – {fmt(r.end)} · Canvas {c.canvassedOn?fmt(c.canvassedOn):'date not recorded'}</option>})}</select></label>
+    <label className="field"><span>Saved overtime period</span><select value={id} onChange={e=>{setChosen(e.target.value);setDate('');}}>{[...state.canvases].reverse().map(c=>{const r=canvasSheet(state,c.id);return <option value={c.id} key={c.id}>{fmt(r.start)} – {fmt(r.end)} · {c.canceled?'Canceled':'Active'} · Canvas {c.canvassedOn?fmt(c.canvassedOn):'date not recorded'}</option>})}</select></label>
     <label className="field"><span>RDO sheet</span><select value={group} onChange={e=>setGroup(e.target.value)}><option value="all">Both RDO groups</option><option value="FS">Friday–Saturday</option><option value="SM">Sunday–Monday</option></select></label>
    </div>
    <div className="actions">
-    <label className="field"><span>Canvas performed on</span><Input type="date" value={date||c.canvassedOn||''} onInput={e=>setDate(e.currentTarget.value)}/></label>
-    <Button variant="outline" disabled={busy||!date} onClick={()=>act({type:'canvasDate',canvas:id,date})}>Save canvas date</Button>
+    <label className="field"><span>Canvas performed on</span><Input type="date" disabled={!!c.canceled} value={date||c.canvassedOn||''} onInput={e=>setDate(e.currentTarget.value)}/></label>
+    <Button variant="outline" disabled={busy||!date||!!c.canceled} onClick={()=>act({type:'canvasDate',canvas:id,date})}>Save canvas date</Button>
     <Button variant="outline" onClick={()=>window.print()}>Print sheet / Save PDF</Button>
     <label className="field"><span>Find worker</span><Input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Worker name"/></label>
    </div>
@@ -38,7 +38,7 @@ export function CanvasSheets({state,act,busy}:{state:State;act:(command:any)=>Pr
      const first=sectionIndex===0,last=sectionIndex===sections.length-1;
      return <div className="sheet-page" key={section.map(e=>e.id).join(':')}>
       <div className="sheet-page-heading">
-       <div><h2>Shop overtime · {g==='FS'?'Friday–Saturday':'Sunday–Monday'} RDO</h2><p><b>Overtime: {fmt(report.start)} – {fmt(report.end)}</b> · Canvassed: {c.canvassedOn?fmt(c.canvassedOn):'Not recorded — enter above'}</p></div>
+       <div><h2>Shop overtime · {g==='FS'?'Friday–Saturday':'Sunday–Monday'} RDO</h2><p><b>Status: {c.canceled?'Canceled':'Active'} · Overtime: {fmt(report.start)} – {fmt(report.end)}</b> · Canvassed: {c.canvassedOn?fmt(c.canvassedOn):'Not recorded — enter above'}</p></div>
        <b className="sheet-part">Part {sectionIndex+1} of {sections.length}</b>
       </div>
       <p className="sheet-legend">A = accepted · R = refused · Rep = replacement · P = absence penalty · Rev = reversal · Adj = correction · — = no charge. Each shift shows net hours charged and the running total, in canvassing order.</p>

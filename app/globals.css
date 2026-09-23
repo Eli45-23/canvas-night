@@ -157,9 +157,10 @@ body {
 
 /* Dated canvas sheets: keep each printed section readable instead of one ultra-wide table. */
 .sheet-page{margin:20px 0 28px}.sheet-page-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:20px}.sheet-page-heading h2{margin-bottom:4px}.sheet-page-heading p{margin:0}.sheet-part{white-space:nowrap;font-size:12px;color:#526574}.hours-sheet .sheet-col-seniority{width:72px}.hours-sheet .sheet-col-worker{width:180px}.hours-sheet .sheet-col-charge{width:78px}.hours-sheet .sheet-col-running{width:72px}.sheet-page .sheet-scroll{max-height:none}
-@page canvas-sheet{size:landscape;margin:.35in}
+@page canvas-sheet{size:15in 11in;margin:.35in}
 @media print{
- .canvas-sheet{padding:0!important;margin:0!important}
+ .canvas-sheet{page:canvas-sheet;padding:0!important;margin:0!important}
+ body:has(.canvas-sheet) .workspace>header{display:none!important}
  .sheet-group{margin:0!important;break-before:auto!important}
  .sheet-page{page:canvas-sheet;margin:0!important;break-inside:auto}
  .sheet-page+.sheet-page,.sheet-group+.sheet-group .sheet-page:first-child{break-before:page}

@@ -287,8 +287,11 @@ export function canvasSheet(s: State, id: string) {
 }
 export function sheetShiftsForGroup(s: State, id: string, group: string) {
     const report=canvasSheet(s,id),rows=report.rows.filter(r=>r.worker.rdo===group);
-    return report.shifts.filter(e=>rows.some(r=>r.cells.some(c=>c.shift===e.id&&c.entries.length>0)) ||
-        ((!e.group||e.group===group)&&rows.some(r=>!intervalConflict(regular(r.worker,e.start,e.end),{start:e.start,end:e.end,source:e.type}))));
+    return report.shifts.filter(e=>rows.some(r=>sheetWorkerCanWork(r.worker,e)));
+}
+// Use the saved roster schedule, not current responses or availability, for sheet columns.
+export function sheetWorkerCanWork(worker: Worker, shift: Shift) {
+    return (!shift.group||shift.group===worker.rdo)&&!intervalConflict(regular(worker,shift.start,shift.end),{start:shift.start,end:shift.end,source:shift.type});
 }
 export function sheetShiftSectionsForGroup(s: State, id: string, group: string, perSection=4) {
     assert(Number.isInteger(perSection)&&perSection>0&&perSection<=8,'Use 1–8 shifts per sheet section.');

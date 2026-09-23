@@ -1,18 +1,38 @@
 "use client";
-import {useState} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
-import {canvasSheet,sheetShiftSectionsForGroup,label,compareSeniority,seniorityLabel,type State} from '@/lib/engine';
+import {canvasSheet,type State} from '@/lib/engine';
 
 export function CanvasSheets({state,act,busy,initialCanvas=''}:{initialCanvas?:string;state:State;act:(command:any)=>Promise<boolean>;busy:boolean}) {
  const [chosen,setChosen]=useState(initialCanvas),[group,setGroup]=useState('all'),[search,setSearch]=useState(''),[date,setDate]=useState('');
+ const [pdf,setPdf]=useState<{url:string;filename:string;state:State;id:string;group:string;search:string}|null>(null);
+ const [error,setError]=useState(''),[loaded,setLoaded]=useState(false);
+ const preview=useRef<HTMLIFrameElement>(null);
  const id=(state.canvases.some(c=>c.id===chosen)?chosen:'')||state.current||state.canvases.at(-1)?.id;
+ useEffect(()=>{
+  let disposed=false,url='';setPdf(null);setLoaded(false);setError('');
+  if(id)void import('@/lib/canvas-pdf').then(({createCanvasPdf,canvasPdfFilename})=>{
+   if(disposed)return;
+   url=URL.createObjectURL(createCanvasPdf(state,id,group,search).output('blob'));
+   setPdf({url,filename:canvasPdfFilename(state,id,group),state,id,group,search});
+  }).catch(()=>{if(!disposed)setError('Unable to prepare the PDF. Reload the canvas sheets and try again.');});
+  return ()=>{disposed=true;if(url)URL.revokeObjectURL(url);};
+ },[state,id,group,search]);
  if(!id)return <section><h2>Dated canvas sheets</h2><p>Create a canvas to start its hours sheet.</p></section>;
- const report=canvasSheet(state,id),c=report.canvas;
+ const c=canvasSheet(state,id).canvas;
+ const ready=pdf&&pdf.state===state&&pdf.id===id&&pdf.group===group&&pdf.search===search;
  const fmt=(d:string)=>new Date(d+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
- const code=(kind:string)=>({'Accepted':'A','Refused':'R','Replacement':'Rep','Absence penalty':'P','Reversal':'Rev','Correction':'Adj'}[kind]||kind);
- const shiftIndex=new Map(report.shifts.map((e,i)=>[e.id,i] as const));
- const groups=['FS','SM'].filter(g=>group==='all'||group===g);
+ function savePdf(){
+  if(!ready||!pdf)return;
+  const link=document.createElement('a');link.href=pdf.url;link.download=pdf.filename;
+  document.body.appendChild(link);link.click();link.remove();
+ }
+ function printPdf(){
+  if(!ready||!loaded)return;
+  try{preview.current?.contentWindow?.focus();preview.current?.contentWindow?.print();}
+  catch{setError('Your browser blocked direct printing. Use the printer icon in the PDF preview, or save the PDF and print it from your PDF viewer.');}
+ }
  return <section className="canvas-sheet">
   <div className="sheet-controls">
    <h2>Dated canvas sheets</h2>
@@ -23,41 +43,14 @@ export function CanvasSheets({state,act,busy,initialCanvas=''}:{initialCanvas?:s
    <div className="actions">
     <label className="field"><span>Canvas performed on</span><Input type="date" disabled={!!c.canceled} value={date||c.canvassedOn||''} onInput={e=>setDate(e.currentTarget.value)}/></label>
     <Button variant="outline" disabled={busy||!date||!!c.canceled} onClick={()=>act({type:'canvasDate',canvas:id,date})}>Save canvas date</Button>
-    <Button variant="outline" onClick={()=>window.print()}>Save as PDF / Print · 11 × 15 landscape</Button>
+    <Button disabled={!ready} onClick={savePdf}>Save PDF</Button>
+    <Button variant="outline" disabled={!ready||!loaded} onClick={printPdf}>Print</Button>
     <label className="field"><span>Find worker</span><Input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Worker name"/></label>
    </div>
-   <p>Paper size: 15 inches wide × 11 inches tall (landscape). To save a copy on your computer, click “Save as PDF / Print”, choose “Save as PDF” in the print dialog (on Mac, use the PDF menu), then choose a folder and save. Use the custom 15 × 11 inch paper size if your browser or printer overrides it.</p>
-   <p>Saved automatically with the canvas. Later corrections revise this period’s sheet and remain in History. Print/PDF view splits each RDO into sections of up to four shifts so names and totals remain readable.</p>
+   <p><b>11 × 15 landscape:</b> every PDF page is 15 inches wide × 11 inches tall. Save PDF downloads a file to your computer without opening the print dialog. Print opens the printer dialog for this same PDF; select matching paper and Actual size / 100% for full-size printing.</p>
+   <p>The preview below is the actual PDF, with up to four shifts per section and additional pages as needed. The selected RDO group and worker filter apply to both buttons. Saved canvas records remain unchanged.</p>
   </div>
-  {groups.map(g=>{
-   const sections=sheetShiftSectionsForGroup(state,id,g,4);
-   const rows=report.rows.filter(r=>r.worker.rdo===g&&r.worker.name.toLowerCase().includes(search.toLowerCase())).sort((a,b)=>compareSeniority(a.worker,b.worker));
-   if(!sections.length)return <div className="sheet-group" key={g}><h2>Shop overtime · {g==='FS'?'Friday–Saturday':'Sunday–Monday'} RDO</h2><p className="empty">No applicable overtime shifts for this RDO group.</p></div>;
-   return <div className="sheet-group" key={g}>
-    {sections.map((section,sectionIndex)=>{
-     const firstIndex=shiftIndex.get(section[0].id)??0,lastIndex=shiftIndex.get(section.at(-1)!.id)??firstIndex;
-     const first=sectionIndex===0,last=sectionIndex===sections.length-1;
-     return <div className="sheet-page" key={section.map(e=>e.id).join(':')}>
-      <div className="sheet-page-heading">
-       <div><h2>Shop overtime · {g==='FS'?'Friday–Saturday':'Sunday–Monday'} RDO</h2><p><b>Status: {c.canceled?'Canceled':'Active'} · Overtime: {fmt(report.start)} – {fmt(report.end)}</b> · Canvassed: {c.canvassedOn?fmt(c.canvassedOn):'Not recorded — enter above'}</p></div>
-       <b className="sheet-part">Part {sectionIndex+1} of {sections.length}</b>
-      </div>
-      <p className="sheet-legend">A = accepted · R = refused · Rep = replacement · P = absence penalty · Rev = reversal · Adj = correction · — = no charge. Each shift shows net hours charged and the running total, in canvassing order.</p>
-      <div className="sheet-scroll"><table className="hours-sheet"><colgroup><col className="sheet-col-seniority"/><col className="sheet-col-worker"/><col className="sheet-col-running"/>{section.flatMap(e=>[<col className="sheet-col-charge" key={e.id+"charge-col"}/>,<col className="sheet-col-running" key={e.id+"total-col"}/>])}<col className="sheet-col-running"/></colgroup><thead><tr>
-       <th rowSpan={2}>Seniority</th><th rowSpan={2}>Worker</th><th rowSpan={2}>{first?'Starting hours':'Brought forward'}</th>
-       {section.map(e=><th colSpan={2} key={e.id}>{e.type}<br/>{label(e)}{e.canceled&&<><br/>CANCELED</>}</th>)}
-       <th rowSpan={2}>{last?'Ending total':'After section'}</th>
-      </tr><tr>{section.flatMap(e=>[<th key={e.id+'charge'}>Charged</th>,<th key={e.id+'total'}>Hours</th>])}</tr></thead>
-      <tbody>{rows.map(r=>{
-       const before=firstIndex===0?r.opening:r.cells[firstIndex-1].running;
-       const after=last?r.ending:r.cells[lastIndex].running;
-       return <tr key={r.worker.id}><td>{seniorityLabel(r.worker)}</td><th scope="row">{r.worker.name}</th><td>{before}</td>
-        {section.flatMap(e=>{const cell=r.cells[shiftIndex.get(e.id)!];return [<td key={e.id+'charge'} className={cell.entries.some(x=>x.kind==='Refused')?'red':''}><b>{cell.entries.length?cell.hours:'—'}</b>{cell.entries.map(x=><small key={x.id}>{code(x.kind)} {x.hours>0?'+':''}{x.hours}</small>)}</td>,<td key={e.id+'total'}>{cell.running}</td>]})}
-        <td><b>{after}</b></td></tr>
-      })}</tbody></table></div>
-     </div>;
-    })}
-   </div>;
-  })}
+  {error&&<p role="alert" className="error">{error}</p>}
+  {!ready?<p role="status">Preparing landscape PDF…</p>:<iframe ref={preview} className="canvas-pdf-preview" title="Canvas PDF preview — 11 × 15 landscape" src={`${pdf.url}#view=FitH`} onLoad={()=>setLoaded(true)}/>}
  </section>;
 }

@@ -23,9 +23,10 @@ export function CanvasSheets({state,act,busy,initialCanvas=''}:{initialCanvas?:s
    <div className="actions">
     <label className="field"><span>Canvas performed on</span><Input type="date" disabled={!!c.canceled} value={date||c.canvassedOn||''} onInput={e=>setDate(e.currentTarget.value)}/></label>
     <Button variant="outline" disabled={busy||!date||!!c.canceled} onClick={()=>act({type:'canvasDate',canvas:id,date})}>Save canvas date</Button>
-    <Button variant="outline" onClick={()=>window.print()}>Print sheet / Save PDF</Button>
+    <Button variant="outline" onClick={()=>window.print()}>Save as PDF / Print · 11 × 15 landscape</Button>
     <label className="field"><span>Find worker</span><Input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Worker name"/></label>
    </div>
+   <p>Paper size: 15 inches wide × 11 inches tall (landscape). To save a copy on your computer, click “Save as PDF / Print”, choose “Save as PDF” in the print dialog (on Mac, use the PDF menu), then choose a folder and save. Use the custom 15 × 11 inch paper size if your browser or printer overrides it.</p>
    <p>Saved automatically with the canvas. Later corrections revise this period’s sheet and remain in History. Print/PDF view splits each RDO into sections of up to four shifts so names and totals remain readable.</p>
   </div>
   {groups.map(g=>{

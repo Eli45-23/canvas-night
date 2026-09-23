@@ -48,7 +48,7 @@ export function CanvasSheets({state,act,busy,initialCanvas=''}:{initialCanvas?:s
     <label className="field"><span>Find worker</span><Input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Worker name"/></label>
    </div>
    <p><b>11 × 15 landscape:</b> every PDF page is 15 inches wide × 11 inches tall. Save PDF downloads a file to your computer without opening the print dialog. Print opens the printer dialog for this same PDF; select matching paper and Actual size / 100% for full-size printing.</p>
-   <p>The preview below is the actual PDF, with up to four shifts per section and additional pages as needed. The selected RDO group and worker filter apply to both buttons. Saved canvas records remain unchanged.</p>
+   <p>The preview below is the actual PDF, in the paper-sheet layout: seniority, names, starting hours, eligible shifts with charged and running hours, and total. Each RDO gets its own sheet; extra pages are added only when needed. The selected RDO group and worker filter apply to both buttons. Saved canvas records remain unchanged.</p>
   </div>
   {error&&<p role="alert" className="error">{error}</p>}
   {!ready?<p role="status">Preparing landscape PDF…</p>:<iframe ref={preview} className="canvas-pdf-preview" title="Canvas PDF preview — 11 × 15 landscape" src={`${pdf.url}#view=FitH`} onLoad={()=>setLoaded(true)}/>}

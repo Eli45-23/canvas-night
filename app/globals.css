@@ -204,3 +204,7 @@ body {
   .workspace::before { display: none; }
   .workspace section { background: white !important; }
 }
+
+/* Preview the actual fixed-size PDF used by both Save PDF and Print. */
+.canvas-pdf-preview{display:block;width:100%;height:80vh;min-height:550px;border:1px solid var(--border);background:#e5e7eb}
+@media print{.canvas-pdf-preview{height:100vh;border:0}}

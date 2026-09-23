@@ -66,7 +66,7 @@ export type State = {
     checkpoint?: {id:string;at:string;data:CheckpointData};
     beforeRestore?: {at:string;data:CheckpointData};
 
-    replacementCalls?: {id:string;adjustment:string;worker:string;kind:'accept'|'decline';response?:string}[];
+    replacementCalls?: {id:string;adjustment:string;worker:string;kind:'accept'|'decline';response?:string;canceled?:boolean}[];
     sampleArchive?: { at: string; source: string; state: State };
     baselineResetArchive?: { at: string; source: string; state: State };
     sheetTotalsSync?: { at: string; source: string; shift: string; chargeIds: string[] };
@@ -81,6 +81,10 @@ export type State = {
         date: string;
         reviewed: boolean;
         baseline: Record<string, number>;
+        canceled?: boolean;
+        canceledAt?: string;
+        cancelReason?: string;
+        activityRecorded?: boolean;
         canvassedOn?: string;
         roster?: Worker[];
     }[];
@@ -330,12 +334,62 @@ export function scheduleReviews(s: State) {
     });
 }
 export function cancellationPreview(s: State, ids: string[]) { return s.charges.filter(c => ids.includes(c.shift) && !c.reverses && !s.charges.some(r => r.reverses === c.id)).map(c => ({ worker: s.workers.find(w => w.id === c.worker)?.name || c.worker, kind: c.kind, hours: -c.hours })); }
+// Keep even inactive records: an undone response is still audit history.
+export function canvasCancellationPreview(s: State, canvasId: string) {
+    const canvas=s.canvases.find(c=>c.id===canvasId);
+    assert(canvas, 'Canvas not found.');
+    const shifts=s.shifts.filter(e=>e.canvas===canvasId), ids=new Set(shifts.map(e=>e.id));
+    const responses=s.responses.filter(r=>ids.has(r.shift));
+    const adjustments=s.adjustments.filter(a=>ids.has(a.shift));
+    const adjustmentIds=new Set(adjustments.map(a=>a.id));
+    const notHere=(s.notHere||[]).filter(n=>n.canvas===canvasId||ids.has(n.shift));
+    const calls=(s.replacementCalls||[]).filter(c=>adjustmentIds.has(c.adjustment));
+    const charges=s.charges.filter(c=>ids.has(c.shift));
+    const changes=cancellationPreview(s,[...ids]);
+    // Older states predate activityRecorded; their dated-work edits live in history.
+    const editedInHistory=s.history.some(h=>
+        (h.text.startsWith('Added ')&&h.text.endsWith(` to weekend ${canvas.date}.`))
+        ||h.text.startsWith(`Set canvassing date for weekend ${canvas.date} to `)
+        ||shifts.some(e=>h.text.startsWith(`Reopened local offers for ${e.type}, ${label(e)}.`)));
+    const empty=!editedInHistory&&!canvas.activityRecorded&&!responses.length&&!charges.length&&!adjustments.length&&!notHere.length&&!calls.length
+        &&!shifts.some(e=>e.closed||e.canceled||e.type==='Material pickup'||e.locations.some(l=>l.required!==(e.type==='Banks'?18:2)));
+    const workers=new Set([...responses,...charges,...adjustments,...notHere,...calls].map(x=>x.worker).filter(Boolean));
+    return {date:canvas.date,empty,action:empty?'delete' as const:'cancel' as const,
+        shiftCount:shifts.length,activeResponses:responses.filter(r=>r.active).length,
+        activeNotHere:notHere.filter(n=>n.active).length,adjustmentCount:adjustments.length,
+        chargeCount:changes.length,hours:changes.reduce((n,c)=>n-c.hours,0),
+        affectedWorkers:[...workers].map(id=>s.workers.find(w=>w.id===id)?.name||canvas.roster?.find(w=>w.id===id)?.name||id),changes};
+}
 export function apply(original: State, cmd: any): State {
     const s = structuredClone(original);
     const worker = (id: string) => { const w = s.workers.find(x => x.id === id); assert(w, 'Worker not found.'); return w; };
     const shift = (id: string) => { const e = s.shifts.find(x => x.id === id); assert(e, 'Shift not found.'); return e; };
     const reason = () => { assert(typeof cmd.reason === 'string' && cmd.reason.trim(), 'Enter a reason.'); return cmd.reason.trim(); };
     switch (cmd.type) {
+        case 'cancelCanvas': {
+            const why=reason(), canvas=s.canvases.find(c=>c.id===cmd.canvas);
+            assert(canvas, 'Canvas not found.');
+            assert(!canvas.canceled, 'Canvas is already canceled.');
+            const preview=canvasCancellationPreview(s,canvas.id);
+            const ids=new Set(s.shifts.filter(e=>e.canvas===canvas.id).map(e=>e.id));
+            if(preview.empty){
+                s.shifts=s.shifts.filter(e=>!ids.has(e.id));
+                s.canvases=s.canvases.filter(c=>c.id!==canvas.id);
+                log(s,`Removed empty canvas for weekend ${canvas.date} created by mistake. ${why}`);
+            }else{
+                canvas.canceled=true;canvas.canceledAt=new Date().toISOString();canvas.cancelReason=why;
+                for(const e of s.shifts.filter(e=>ids.has(e.id))){e.canceled=true;e.closed=true;}
+                s.responses.filter(r=>ids.has(r.shift)).forEach(r=>r.active=false);
+                s.charges.filter(c=>ids.has(c.shift)).forEach(c=>reverse(s,c));
+                const adjustments=s.adjustments.filter(a=>ids.has(a.shift));
+                adjustments.forEach(a=>a.canceled=true);
+                (s.notHere||[]).filter(n=>n.canvas===canvas.id||ids.has(n.shift)).forEach(n=>n.active=false);
+                (s.replacementCalls||[]).filter(c=>adjustments.some(a=>a.id===c.adjustment)).forEach(c=>c.canceled=true);
+                log(s,`Canceled canvas for weekend ${canvas.date}. Reversed ${preview.hours} hours across ${preview.chargeCount} worker charges. Existing history retained. ${why}`);
+            }
+            if(s.current===canvas.id)s.current='';
+            break;
+        }
         case 'saveCheckpoint': {
             s.checkpoint={id:uid(),at:new Date().toISOString(),data:checkpointData(s)};
             log(s,`Saved checkpoint for ${s.workers.length} workers, including hours and linked canvas records.`);
@@ -398,12 +452,12 @@ export function apply(original: State, cmd: any): State {
             break;
         }
         case 'canvasDate': {
-            const c=s.canvases.find(c=>c.id===cmd.canvas);assert(c,'Select a saved canvas.');
+            const c=s.canvases.find(c=>c.id===cmd.canvas);assert(c&&!c.canceled,'Select an active saved canvas.');
             assert(/^\d{4}-\d{2}-\d{2}$/.test(cmd.date)&&localDate(at(cmd.date,12))===cmd.date,'Enter a valid canvassing date.');
             c.canvassedOn=cmd.date;log(s,`Set canvassing date for weekend ${c.date} to ${cmd.date}.`);break;
         }
         case 'extraShift': {
-            const c=s.canvases.find(c=>c.id===cmd.canvas);assert(c,'Select the canvas this work belongs to.');
+            const c=s.canvases.find(c=>c.id===cmd.canvas);assert(c&&!c.canceled,'Select an active canvas this work belongs to.');
             assert(['Banks','Material pickup'].includes(cmd.workType),'Choose banks or material pickup.');
             assert(/^\d{4}-\d{2}-\d{2}$/.test(cmd.date)&&localDate(at(cmd.date,12))===cmd.date,'Enter a valid work date.');
             assert([6,14,22].includes(cmd.hour),'Choose a shift start time.');
@@ -537,7 +591,7 @@ export function apply(original: State, cmd: any): State {
             assert(!incompleteCanvas(s), 'Complete the current canvas and secure chip-out coverage before starting another.');
             assert(!s.adjustments.some(a => !a.applied && !a.canceled), 'Review pending penalties first.');
             assert(weekday(cmd.date) === 5, 'Choose the Friday of the chip-out weekend.');
-            assert(!s.canvases.some(c => c.date === cmd.date), 'This weekend already has a canvas. Use its existing records.');
+            assert(!s.canvases.some(c => c.date === cmd.date && !c.canceled), 'This weekend already has a canvas. Use its existing records.');
             assert(Array.isArray(cmd.locations) && cmd.locations.length && cmd.locations.every((l: any) => typeof l === 'string' && l.trim()), 'Enter at least one location.');
             assert(new Set(cmd.locations.map((l: string) => l.trim().toLowerCase())).size === cmd.locations.length, 'Location names must be unique.');
             const id = uid();
@@ -788,11 +842,16 @@ export function apply(original: State, cmd: any): State {
             break;
         }
         case 'selectCanvas': {
-            assert(s.canvases.some(c => c.id === cmd.id), 'Canvas not found.');
+            assert(s.canvases.some(c => c.id === cmd.id && !c.canceled), 'Active canvas not found.');
             s.current = cmd.id;
             break;
         }
         default: throw new Error('Unknown action.');
+    }
+    // Preserve user edits that do not create ledger or response records.
+    if(['canvasDate','extraShift','opening','shortage','reopen','cancel'].includes(cmd.type)){
+        const ids=new Set<string>(cmd.shifts||[cmd.shift]);
+        for(const c of s.canvases)if(c.id===cmd.canvas||s.shifts.some(e=>e.canvas===c.id&&ids.has(e.id)))c.activityRecorded=true;
     }
     return s;
 }

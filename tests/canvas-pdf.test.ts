@@ -66,3 +66,36 @@ test('saved dated exceptions mark unavailable workers without hiding other worke
  const e=report.shifts.find(e=>e.type==='Chip-out')!;
  assert.equal(row.cells.find(c=>c.shift===e.id)!.mark,'X');
 });
+
+test('call-outs show R8 on time and R16 for late or missing notice without posting queued hours early',()=>{
+ for(const noticeHours of [5,4,3,null]){
+  let s=fixture();const e=s.shifts[0],w=s.workers[0];
+  // A normal accepted assignment with a retained original eight-hour charge.
+  s.responses.push({id:'callout-response',worker:w.id,shift:e.id,kind:'accept',location:e.locations[0].name,active:true});
+  s.charges.push({id:'original-accept',worker:w.id,shift:e.id,response:'callout-response',kind:'Accepted',hours:8});
+  s=apply(s,{type:'absence',response:'callout-response',reason:'Cannot attend',notice:noticeHours===null?'':new Date(e.start-noticeHours*3600000).toISOString()});
+  const late=noticeHours===null||noticeHours<4;
+  let row=paperCanvasSheet(s,s.current,'FS').rows.find(r=>r.worker.id===w.id)!;
+  assert.equal(row.cells[0].mark,late?'R16\n(8 pending)':'R8');
+  assert.equal(row.ending,w.starting+8);
+  if(late){
+   for(const shift of s.shifts)for(const location of shift.locations){
+    const assigned=s.responses.filter(r=>r.shift===shift.id&&r.location===location.name&&r.active&&!r.absent&&r.kind!=='refuse').length;
+    for(let i=assigned;i<location.required;i++)s=apply(s,{type:'outside',shift:shift.id,location:location.name});
+   }
+   s=apply(s,{type:'review'});
+   row=paperCanvasSheet(s,s.current,'FS').rows.find(r=>r.worker.id===w.id)!;
+   assert.equal(row.cells[0].mark,'R16');assert.equal(row.ending,w.starting+16);
+  }
+ }
+});
+test('correcting a call-out restores accepted notation, and canceled work does not retain an R16 label',()=>{
+ let s=fixture();const e=s.shifts[0],w=s.workers[0];
+ s.responses.push({id:'absence-response',worker:w.id,shift:e.id,kind:'accept',location:e.locations[0].name,active:true});
+ s.charges.push({id:'accepted-charge',worker:w.id,shift:e.id,response:'absence-response',kind:'Accepted',hours:8});
+ s=apply(s,{type:'absence',response:'absence-response',reason:'Cannot attend'});
+ const canceled=apply(s,{type:'cancel',shifts:[e.id],reason:'Work withdrawn'});
+ assert.equal(paperCanvasSheet(canceled,canceled.current,'FS').rows.find(r=>r.worker.id===w.id)!.cells[0].mark,'0*');
+ s=apply(s,{type:'undoAbsence',id:s.adjustments[0].id,reason:'Wrong call-out'});
+ assert.equal(paperCanvasSheet(s,s.current,'FS').rows.find(r=>r.worker.id===w.id)!.cells[0].mark,'8');
+});

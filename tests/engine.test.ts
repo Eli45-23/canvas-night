@@ -31,7 +31,7 @@ test('Not here retains earlier assignments and charges for the same worker',()=>
     assert(s.responses.find(r=>r.id===assignment.id)!.active);assert.equal(total(s,w.id),before);
     assert.equal(eligible(s,w,s.shifts[0],assignment.id),'');
 });
-import { seed, apply, total, canvasSheet, sheetShiftsForGroup, sheetShiftSectionsForGroup, replacementQueue, lateAvailableQueue, queue, nextShift, coverage, eligible, at, dayAdd, intervalConflict, H, parseSeniority, chipsBlocked, canvasCancellationPreview, cancellationPreview, scheduleReviews, baselineResetPreview, sheetTotalsPreview, SEPT_18_BASELINE, SEPT_18_ROSTER, SEPT_21_TOTALS, seniorityLabel, compareSeniority, type State, type Shift } from '../lib/engine.ts';
+import { seed, apply, total, canvasSheet, sheetShiftsForGroup, sheetShiftSectionsForGroup, replacementQueue, availableOpeningQueue, lateAvailableQueue, queue, nextShift, coverage, eligible, at, dayAdd, intervalConflict, H, parseSeniority, chipsBlocked, canvasCancellationPreview, cancellationPreview, scheduleReviews, baselineResetPreview, sheetTotalsPreview, SEPT_18_BASELINE, SEPT_18_ROSTER, SEPT_21_TOTALS, seniorityLabel, compareSeniority, type State, type Shift } from '../lib/engine.ts';
 
 test('correct a refusal to acceptance without charging twice or reshuffling other responses',()=>{
     let s=setup(); s=respond(s,'refuse'); const first=s.responses[0]; s=respond(s);
@@ -685,4 +685,63 @@ test('canceling a canvas does not restore starting hours reclassified for an inc
     const starting=s.workers.find(x=>x.id===w.id)!.starting;assert.equal(starting,16);
     const canceled=cancelWhole(s);assert.equal(canceled.workers.find(x=>x.id===w.id)!.starting,starting);
     assert.equal(total(canceled,w.id),starting);assert.deepEqual(canceled.workers,s.workers);
+});
+
+test('Results opening list includes present, Not Here and refused workers in current-hours order',()=>{
+ let s=setup(['A'],['thu']);const e=nextShift(s)!;
+ const refused=queue(s,e)[0];s=apply(s,{type:'respond',shift:e.id,worker:refused.id,kind:'refuse'});
+ const away=queue(s,e)[0];s=apply(s,{type:'notHere',shift:e.id,worker:away.id});
+ const present=queue(s,e)[0];
+ const candidates=availableOpeningQueue(s,e,'Banks');
+ for(const w of [refused,away,present])assert(candidates.some(c=>c.id===w.id));
+ assert(candidates.every((w,i)=>i===0||total(s,candidates[i-1].id)<=total(s,w.id)));
+ assert.equal(availableOpeningQueue(s,e,'missing').length,0);
+ assert.deepEqual(availableOpeningQueue(s,{...e,canceled:true},'Banks'),[]);
+});
+test('Results can assign present or refused workers without Not Here, preserves refusal and charges once',()=>{
+ for(const refused of [false,true]){
+  let s=setup(['A'],['thu']);const e=nextShift(s)!,w=queue(s,e)[0];
+  if(refused)s=apply(s,{type:'respond',shift:e.id,worker:w.id,kind:'refuse'});
+  const before=total(s,w.id),starting=w.starting;
+  const command={type:'assignOpenShift',shift:e.id,location:'Banks',worker:w.id};s=apply(s,command);
+  assert.equal(total(s,w.id),before+8);assert.equal(s.workers.find(x=>x.id===w.id)!.starting,starting);
+  assert.equal(s.responses.filter(r=>r.worker===w.id&&r.active&&r.kind==='refuse').length,refused?1:0);
+  assert.equal(scheduleReviews(s).length,0);assert.throws(()=>apply(s,command),/no longer eligible/);
+  s=apply(s,{type:'cancel',shifts:[e.id],reason:'Canceled'});assert.equal(total(s,w.id),starting);
+ }
+});
+test('Results call-out candidates include all attendance types and assignments preserve absence reversal links',()=>{
+ let s=setup(['A'],['thu']);const e=nextShift(s)!;
+ const refused=queue(s,e)[0];s=apply(s,{type:'respond',shift:e.id,worker:refused.id,kind:'refuse'});
+ const away=queue(s,e)[0];s=apply(s,{type:'notHere',shift:e.id,worker:away.id});
+ const original=queue(s,e)[0];s=apply(s,{type:'respond',shift:e.id,worker:original.id,kind:'accept',location:'Banks'});
+ const response=s.responses.find(r=>r.worker===original.id)!;
+ s=apply(s,{type:'absence',response:response.id,reason:'Call-out'});const a=s.adjustments.at(-1)!;
+ const present=queue(s,e)[0],ids=availableOpeningQueue(s,e,'Banks').map(w=>w.id);
+ for(const w of [refused,away,present])assert(ids.includes(w.id));assert(!ids.includes(original.id));
+ const before=total(s,refused.id);
+ s=apply(s,{type:'assignOpenShift',shift:e.id,location:'Banks',worker:refused.id});
+ assert.equal(s.adjustments.at(-1)!.replacement,refused.id);assert(s.charges.some(c=>c.adjustment===a.id&&c.kind==='Replacement'));
+ assert(s.replacementCalls!.some(c=>c.adjustment===a.id&&c.worker===refused.id));assert.equal(total(s,refused.id),before+8);
+ s=apply(s,{type:'undoAbsence',id:a.id,reason:'Correction'});assert.equal(total(s,refused.id),before);
+ assert(s.responses.find(r=>r.id===response.id)!.active);assert.equal(s.responses.find(r=>r.id===response.id)!.absent,false);
+});
+test('Results opening queue excludes assigned, inactive, wrong RDO and conflicting workers',()=>{
+ let s=setup(['A'],['thu']);const e=nextShift(s)!;
+ const assigned=queue(s,e)[0];s=apply(s,{type:'respond',shift:e.id,worker:assigned.id,kind:'accept',location:'Banks'});
+ const others=queue(s,e).slice(0,3);s.workers.find(w=>w.id===others[0].id)!.active=false;
+ s.workers.find(w=>w.id===others[1].id)!.rdo='SM';s.workers.find(w=>w.id===others[2].id)!.days=[0,1,2,3,4,5,6];
+ const ids=availableOpeningQueue(s,e,'Banks').map(w=>w.id);
+ for(const w of [assigned,...others]){
+  assert(!ids.includes(w.id));assert.throws(()=>apply(s,{type:'assignOpenShift',shift:e.id,location:'Banks',worker:w.id}),/no longer eligible/);
+ }
+});
+test('Results call-out list uses existing replacement decline history and location-specific capacity',()=>{
+ let s=respond(setup(['A']));const e=s.shifts[0];
+ s=apply(s,{type:'absence',response:s.responses[0].id,reason:'Call-out'});const a=s.adjustments[0];
+ const declined=replacementQueue(s,a)[0];s=apply(s,{type:'replacementRespond',adjustment:a.id,worker:declined.id,kind:'decline'});
+ assert(!availableOpeningQueue(s,e,'A').some(w=>w.id===declined.id));
+ while(coverage(s,e,'A').remaining>0)s=apply(s,{type:'outside',shift:e.id,location:'A'});
+ assert.equal(availableOpeningQueue(s,e,'A').length,0);
+ assert.throws(()=>apply(s,{type:'assignOpenShift',shift:e.id,location:'A',worker:declined.id}),/no longer has an open position/);
 });

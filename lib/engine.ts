@@ -280,6 +280,13 @@ export function lateAvailableQueue(s: State, e: Shift) {
         && !intervalConflict(work(s,w,e),{start:e.start,end:e.end,source:e.type}))
         .sort((a,b)=>compare(s,a,b));
 }
+// Call-out notation includes the queued penalty without changing when it posts to totals.
+export function calloutChargeStatus(s: State, responseId: string) {
+    const response=s.responses.find(r=>r.id===responseId&&r.active&&r.absent);
+    const adjustment=s.adjustments.find(a=>a.response===responseId&&!a.canceled);
+    if(!response||!adjustment)return null;
+    return {label:adjustment.penalty?'R16':'R8',pendingHours:adjustment.penalty&&!adjustment.applied?8:0};
+}
 export function canvasSheet(s: State, id: string) {
     const canvas=s.canvases.find(c=>c.id===id);
     assert(canvas,'Select a saved canvas.');

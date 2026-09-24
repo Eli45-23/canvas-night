@@ -1,6 +1,6 @@
 import {jsPDF} from 'jspdf';
 import {autoTable, type CellInput, type Styles} from 'jspdf-autotable';
-import {canvasSheet, sheetShiftsForGroup, sheetWorkerCanWork, localDate, compareSeniority, seniorityLabel, type State, type Shift} from './engine.ts';
+import {canvasSheet, sheetShiftsForGroup, sheetWorkerCanWork, calloutChargeStatus, localDate, compareSeniority, seniorityLabel, type State, type Shift} from './engine.ts';
 
 export const CANVAS_PDF_SIZE = [1080, 792] as const;
 const margin=26,tableWidth=1028;
@@ -20,10 +20,12 @@ export function paperCanvasSheet(state:State,id:string,group:string,search=''){
             const cell=r.cells.find(c=>c.shift===e.id)!;
             running+=cell.hours;
             const refused=cell.hours>0&&cell.entries.filter(c=>!c.reverses&&!state.charges.some(x=>x.reverses===c.id)).every(c=>c.kind==='Refused');
-            const exceptional=cell.entries.some(c=>!['Accepted','Refused'].includes(c.kind));
+            const callouts=state.responses.filter(response=>response.worker===r.worker.id&&response.shift===e.id).map(response=>calloutChargeStatus(state,response.id)).filter(status=>status!==null);
+            const pendingHours=callouts.reduce((n,status)=>n+status.pendingHours,0);
+            const exceptional=cell.entries.some(c=>!['Accepted','Refused',...(callouts.length?['Absence penalty']:[])].includes(c.kind));
             const available=sheetWorkerCanWork(r.worker,e);
             return {shift:e.id,hours:cell.hours,running,charged:cell.entries.length>0,available,
-                mark:cell.entries.length?`${refused?'R':''}${cell.hours}${exceptional?'*':''}${!available?'!':''}`:available?'':'X'};
+                mark:cell.entries.length?`${refused||callouts.length?'R':''}${cell.hours+pendingHours}${exceptional?'*':''}${!available?'!':''}${pendingHours?'\n('+pendingHours+' pending)':''}`:available?'':'X'};
         });
         const other=r.cells.filter(c=>!visible.has(c.shift)&&c.entries.length);
         return {...r,cells,other,otherHours:other.reduce((n,c)=>n+c.hours,0)};
@@ -50,7 +52,7 @@ export function createCanvasPdf(state:State,id:string,group='all',search='') {
                 doc.text(`SHOP OVERTIME - ${g==='FS'?'FRIDAY-SATURDAY':'SUNDAY-MONDAY'} RDO`,540,37,{align:'center'});
                 doc.setFont('helvetica','normal').setFontSize(9);
                 doc.text(`Weekend: ${canvas.date} | Canvassed: ${canvas.canvassedOn||'Not recorded'} | Status: ${canvas.canceled?'Canceled':'Active'}${sections.length>1?` | Part ${part+1} of ${sections.length}`:''}`,540,53,{align:'center'});
-                doc.setFontSize(8).text('Shift cell = net hours charged | R = refusal | X = unavailable on saved schedule | * = adjusted/reversed | ! = recorded schedule exception',margin,70);
+                doc.setFontSize(8).text('Shift cell = charge notation | R = refusal/call-out | Pending hours post at review, not yet in TOTAL | X = unavailable | * = adjusted/reversed | ! = schedule exception',margin,70);
             };
             const head:CellInput[][]=[['SEN#','NAMES',part?'HOURS\nB/F':'HOURS',...section.flatMap(e=>[shiftHeading(e),'HOURS']),...(other?['OTHER\nCHARGES']:[]),last?'TOTAL':'CARRY\nFORWARD']];
             const body:CellInput[][]=report.rows.map(r=>[

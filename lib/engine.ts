@@ -259,6 +259,19 @@ export function replacementQueue(s: State, a: Adjustment) {
         && !intervalConflict(work(s,w,e),{start:e.start,end:e.end,source:e.type}))
         .sort((a,b)=>compare(s,a,b));
 }
+function openingAdjustment(s: State, e: Shift, location: string) {
+    return s.adjustments.find(a=>a.shift===e.id&&!a.canceled&&!a.replacement&&s.responses.some(r=>r.id===a.response&&r.active&&r.absent&&r.location===location));
+}
+// Results openings may be filled by any eligible worker, regardless of canvas attendance.
+export function availableOpeningQueue(s: State, e: Shift, location: string) {
+    if(e.canceled||!e.locations.some(l=>l.name===location)||coverage(s,e,location).remaining<=0)return [];
+    const adjustment=openingAdjustment(s,e,location);
+    if(adjustment)return replacementQueue(s,adjustment);
+    return s.workers.filter(w=>w.active&&(!e.group||w.rdo===e.group)
+        &&!s.responses.some(r=>r.worker===w.id&&r.shift===e.id&&r.active&&r.kind==='accept')
+        &&!intervalConflict(work(s,w,e),{start:e.start,end:e.end,source:e.type}))
+        .sort((a,b)=>compare(s,a,b));
+}
 export function lateAvailableQueue(s: State, e: Shift) {
     if(e.canceled || coverage(s,e).remaining<=0) return [];
     const marked=new Set((s.notHere||[]).filter(n=>n.active&&n.canvas===e.canvas).map(n=>n.worker));
@@ -471,6 +484,24 @@ export function apply(original: State, cmd: any): State {
             if(cmd.workType==='Banks'&&cmd.hour===22){const d=weekday(cmd.date);if(d===4||d===5)e.group='FS';if(d===6||d===0)e.group='SM';}
             s.shifts.push(e);s.current=c.id;
             log(s,`Added ${e.type}, ${label(e)}, ${cmd.required} positions at ${cmd.location.trim()} to weekend ${c.date}.`);break;
+        }
+        case 'assignOpenShift': {
+            const e=shift(cmd.shift);
+            assert(!e.canceled,'This work was canceled.');
+            assert(typeof cmd.location==='string'&&e.locations.some(l=>l.name===cmd.location),'Choose a valid location.');
+            assert(coverage(s,e,cmd.location).remaining>0,'This location no longer has an open position.');
+            const w=availableOpeningQueue(s,e,cmd.location).find(w=>w.id===cmd.worker);
+            assert(w,'This worker is no longer eligible for this opening.');
+            const adjustment=openingAdjustment(s,e,cmd.location),id=uid();
+            s.responses.push({id,worker:w.id,shift:e.id,kind:'accept',location:cmd.location,active:true});
+            // Replacement marks allow a prior refusal and this later acceptance to coexist.
+            charge(s,w.id,e.id,'Replacement',8,{response:id,...(adjustment?{adjustment:adjustment.id}:{})});
+            if(adjustment){
+                adjustment.replacement=w.id;adjustment.replacementResponse=id;
+                (s.replacementCalls ||= []).push({id:uid(),adjustment:adjustment.id,worker:w.id,kind:'accept',response:id});
+            }
+            log(s,`${w.name}: accepted open ${e.type} shift, ${label(e)}, ${cmd.location}; +8 hours.${adjustment?' Linked to the original call-out.':''} Previous responses and Not here history retained.`);
+            break;
         }
         case 'lateAvailabilityAssign': {
             const e=shift(cmd.shift);

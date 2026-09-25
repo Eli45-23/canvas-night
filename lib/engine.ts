@@ -22,6 +22,7 @@ export type Shift = {
     end: number;
     group?: string;
     externalKey?: string;
+    cancellationHours?: Record<string, number>;
     locations: {
         name: string;
         required: number;
@@ -323,6 +324,19 @@ function log(s: State, text: string) { s.history.push({ id: uid(), at: new Date(
 function charge(s: State, worker: string, shift: string, kind: string, hours: number, extra: Partial<Charge> = {}) { s.charges.push({ id: uid(), worker, shift, kind, hours, ...extra }); }
 function reverse(s: State, c: Charge) { if (c.reverses || s.charges.some(x => x.reverses === c.id))
     return; charge(s, c.worker, c.shift, 'Reversal', -c.hours, { reverses: c.id, response: c.response, adjustment: c.adjustment }); }
+function recordCancellationHours(s: State, e: Shift) {
+    if(e.canceled)return;
+    e.cancellationHours={};
+    for(const c of s.charges.filter(c=>c.shift===e.id&&!c.reverses&&!s.charges.some(r=>r.reverses===c.id))){
+        e.cancellationHours[c.worker]=(e.cancellationHours[c.worker]||0)-c.hours;
+    }
+}
+export function canceledHoursReturned(s: State, e: Shift, worker: string) {
+    if(!e.canceled)return 0;
+    if(e.cancellationHours)return e.cancellationHours[worker]||0;
+    // Legacy records have no cancellation snapshot: show all recorded reversals for this shift.
+    return s.charges.filter(c=>c.shift===e.id&&c.worker===worker&&c.reverses).reduce((n,c)=>n+c.hours,0);
+}
 function affected(s: State, text: string) {
     const responseIds=s.responses.filter(r=>r.active&&r.kind!=='outside').map(r=>r.id);
     if(responseIds.length)s.reviews.push({id:uid(),text,resolved:false,responseIds});
@@ -401,7 +415,7 @@ export function apply(original: State, cmd: any): State {
                 log(s,`Removed empty canvas for weekend ${canvas.date} created by mistake. ${why}`);
             }else{
                 canvas.canceled=true;canvas.canceledAt=new Date().toISOString();canvas.cancelReason=why;
-                for(const e of s.shifts.filter(e=>ids.has(e.id))){e.canceled=true;e.closed=true;}
+                for(const e of s.shifts.filter(e=>ids.has(e.id))){recordCancellationHours(s,e);e.canceled=true;e.closed=true;}
                 s.responses.filter(r=>ids.has(r.shift)).forEach(r=>r.active=false);
                 s.charges.filter(c=>ids.has(c.shift)).forEach(c=>reverse(s,c));
                 const adjustments=s.adjustments.filter(a=>ids.has(a.shift));
@@ -750,6 +764,7 @@ export function apply(original: State, cmd: any): State {
             for (const id of new Set<string>(cmd.shifts)) {
                 const e = shift(id);
                 assert(!e.canceled, 'Work is already canceled.');
+                recordCancellationHours(s,e);
                 e.canceled = true;
                 e.closed = true;
                 s.responses.filter(r => r.shift === id).forEach(r => r.active = false);
@@ -769,6 +784,7 @@ export function apply(original: State, cmd: any): State {
             const r = cmd.response ? s.responses.find(r => r.id === cmd.response && r.shift === e.id && r.location === l.name && r.active && r.kind !== 'refuse') : undefined;
             assert(!cmd.response || r, 'Selected assignment is no longer active.');
             assert(r || !s.responses.some(x=>x.shift===e.id&&x.location===l.name&&x.active&&x.absent), 'Select the called-out assignment to cancel its opening and linked charges.');
+            if(coverage(s,e).required===1)recordCancellationHours(s,e);
             if (r) {
                 const ids=linkedResponses(s,r.id);
                 s.responses.filter(x=>ids.has(x.id)).forEach(x=>x.active=false);

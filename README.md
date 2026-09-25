@@ -57,3 +57,9 @@ npm run dev
 Apply the migration once for a new local database. Then open the Local URL printed by the server, normally `http://localhost:5173/`. Later launches only need `npm run dev`. Keep `.wrangler/state` to retain local records. Stop the server with Ctrl+C. Run `node --experimental-strip-types --test tests/engine.test.ts` for rule tests and `npx tsc --noEmit` for type validation.
 
 The app uses React/Vinext, a server-validated command endpoint, and SQLite-compatible D1 persistence with revision checks. Source and tests are included for future maintenance.
+
+### Editable canvas hours
+
+In **Canvas sheets**, click a worker’s shift charge, choose **Add hours** or **Take away hours**, enter the amount and a reason, and save. The correction updates running balances, current totals across the app, and the PDF immediately after saving. History retains the correction; starting hours and coverage assignments are preserved. Enable **Show all canvas shifts** to adjust another RDO date. Canceled shifts are read-only.
+
+Canceled shift cells display returned hours (for example **-8**, or **-16** when sixteen posted hours are reversed), while running balances use net ledger charges. New cancellations record the amount returned at cancellation, excluding older corrections already reversed. Older canceled records without that snapshot display the sum of their recorded reversals.

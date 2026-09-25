@@ -1,6 +1,6 @@
 import {jsPDF} from 'jspdf';
 import {autoTable, type CellInput, type Styles} from 'jspdf-autotable';
-import {canvasSheet, sheetShiftsForGroup, sheetWorkerCanWork, calloutChargeStatus, localDate, compareSeniority, seniorityLabel, type State, type Shift} from './engine.ts';
+import {canvasSheet, sheetShiftsForGroup, sheetWorkerCanWork, calloutChargeStatus, canceledHoursReturned, localDate, compareSeniority, seniorityLabel, type State, type Shift} from './engine.ts';
 
 export const CANVAS_PDF_SIZE = [1080, 792] as const;
 const margin=26,tableWidth=1028;
@@ -12,8 +12,8 @@ function shiftHeading(e:Shift){
 }
 
 // Visible running hours follow only the columns shown, then add separately disclosed exceptions.
-export function paperCanvasSheet(state:State,id:string,group:string,search=''){
-    const report=canvasSheet(state,id),shifts=sheetShiftsForGroup(state,id,group),visible=new Set(shifts.map(e=>e.id));
+export function paperCanvasSheet(state:State,id:string,group:string,search='',allShifts=false){
+    const report=canvasSheet(state,id),shifts=allShifts?report.shifts:sheetShiftsForGroup(state,id,group),visible=new Set(shifts.map(e=>e.id));
     const rows=report.rows.filter(r=>r.worker.rdo===group&&r.worker.name.toLowerCase().includes(search.toLowerCase())).sort((a,b)=>compareSeniority(a.worker,b.worker)).map(r=>{
         let running=r.opening;
         const cells=shifts.map(e=>{
@@ -24,8 +24,9 @@ export function paperCanvasSheet(state:State,id:string,group:string,search=''){
             const pendingHours=callouts.reduce((n,status)=>n+status.pendingHours,0);
             const exceptional=cell.entries.some(c=>!['Accepted','Refused',...(callouts.length?['Absence penalty']:[])].includes(c.kind));
             const available=sheetWorkerCanWork(r.worker,e);
+            const returned=canceledHoursReturned(state,e,r.worker.id);
             return {shift:e.id,hours:cell.hours,running,charged:cell.entries.length>0,available,
-                mark:cell.entries.length?`${refused||callouts.length?'R':''}${cell.hours+pendingHours}${exceptional?'*':''}${!available?'!':''}${pendingHours?'\n('+pendingHours+' pending)':''}`:available?'':'X'};
+                mark:e.canceled&&returned!==0?String(returned):cell.entries.length?`${refused||callouts.length?'R':''}${cell.hours+pendingHours}${exceptional?'*':''}${!available?'!':''}${pendingHours?'\n('+pendingHours+' pending)':''}`:available?'':'X'};
         });
         const other=r.cells.filter(c=>!visible.has(c.shift)&&c.entries.length);
         return {...r,cells,other,otherHours:other.reduce((n,c)=>n+c.hours,0)};
@@ -87,7 +88,7 @@ export function createCanvasPdf(state:State,id:string,group='all',search='') {
     }
     for(let page=1;page<=doc.getNumberOfPages();page++){
         doc.setPage(page);doc.setFont('helvetica','normal').setFontSize(8).setTextColor(70);
-        doc.text('11 x 15 in landscape | HOURS = running balance after that shift; blank = no charge recorded. Full charge details remain in History.',margin,766);
+        doc.text('11 x 15 in landscape | Canceled cells show hours returned (legacy: all reversals); HOURS/TOTAL use net charges, without subtracting refunds twice.',margin,766);
         doc.text(`Page ${page} of ${doc.getNumberOfPages()}`,1054,780,{align:'right'});
     }
     return doc;

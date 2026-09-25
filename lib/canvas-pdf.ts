@@ -88,7 +88,7 @@ export function createCanvasPdf(state:State,id:string,group='all',search='') {
     }
     for(let page=1;page<=doc.getNumberOfPages();page++){
         doc.setPage(page);doc.setFont('helvetica','normal').setFontSize(8).setTextColor(70);
-        doc.text('11 x 15 in landscape | Canceled cells show hours returned (legacy: all reversals); HOURS/TOTAL use net charges, without subtracting refunds twice.',margin,766);
+        doc.text('11 x 15 in landscape | Canceled cells show hours returned (older records: final reversal batch); HOURS/TOTAL use net charges, without subtracting refunds twice.',margin,766);
         doc.text(`Page ${page} of ${doc.getNumberOfPages()}`,1054,780,{align:'right'});
     }
     return doc;

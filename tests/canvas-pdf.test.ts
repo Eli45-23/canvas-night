@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createCanvasPdf,canvasPdfFilename,paperCanvasSheet} from '../lib/canvas-pdf.ts';
-import {apply,seed,total,type State} from '../lib/engine.ts';
+import {apply,seed,total,canceledHoursReturned,cancellationPreview,type State} from '../lib/engine.ts';
 function fixture(){
  let s=apply(seed(),{type:'loadSept18Roster'});
  return apply(apply(s,{type:'review'}),{type:'setup',date:'2026-09-25',canvassedOn:'2026-09-22',locations:['A'],banks:['thu','fri','sat','sun']});
@@ -152,4 +152,64 @@ test('final opening and entire canvas cancellation record refunds, including pos
   assert.equal(paperCanvasSheet(s,e.canvas,'FS').rows[0].cells[0].mark,'-16');
   assert.equal(total(s,w.id),w.starting);
  }
+});
+
+
+test('legacy undo, reaccept, and cancellation shows only the final refund for every worker',()=>{
+ let s=fixture();const e=s.shifts[0],[a,b]=s.workers;
+ s.charges.push({id:'a1',worker:a.id,shift:e.id,kind:'Accepted',hours:8},
+  {id:'undo-a1',worker:a.id,shift:e.id,kind:'Reversal',hours:-8,reverses:'a1'},
+  {id:'a2',worker:a.id,shift:e.id,kind:'Accepted',hours:8},
+  {id:'b1',worker:b.id,shift:e.id,kind:'Refused',hours:8});
+ assert.deepEqual(cancellationPreview(s,[e.id]).map(c=>c.hours),[-8,-8]);
+ s=apply(s,{type:'cancel',shifts:[e.id],reason:'Withdrawn'});
+ delete s.shifts[0].cancellationHours;
+ const before=structuredClone(s);
+ for(const w of [a,b]){
+  assert.equal(canceledHoursReturned(s,s.shifts[0],w.id),-8);
+  const row=paperCanvasSheet(s,s.current,'FS').rows.find(r=>r.worker.id===w.id)!;
+  assert.equal(row.cells[0].mark,'-8');assert.equal(row.ending,w.starting);
+ }
+ checkPhysicalPages(s);assert.deepEqual(s,before);
+});
+test('legacy refund preserves real sixteen-hour refunds and signed corrections',()=>{
+ for(const extra of [8,-3]){
+  let s=fixture();const e=s.shifts[0],w=s.workers[0];
+  s.charges.push({id:'original',worker:w.id,shift:e.id,kind:'Accepted',hours:8},
+   {id:'extra',worker:w.id,shift:e.id,kind:extra===8?'Absence penalty':'Correction',hours:extra});
+  s=apply(s,{type:'cancel',shifts:[e.id],reason:'Withdrawn'});delete s.shifts[0].cancellationHours;
+  assert.equal(canceledHoursReturned(s,s.shifts[0],w.id),-(8+extra));
+  assert.equal(total(s,w.id),w.starting);
+ }
+});
+test('legacy reversal order boundary excludes an adjacent earlier undo',()=>{
+ let s=fixture();const e=s.shifts[0],[a,b]=s.workers;
+ s.charges.push({id:'a',worker:a.id,shift:e.id,kind:'Accepted',hours:8},
+  {id:'b',worker:b.id,shift:e.id,kind:'Accepted',hours:8},
+  {id:'undo-b',worker:b.id,shift:e.id,kind:'Reversal',hours:-8,reverses:'b'});
+ s=apply(s,{type:'cancel',shifts:[e.id],reason:'Withdrawn'});delete s.shifts[0].cancellationHours;
+ assert.equal(canceledHoursReturned(s,s.shifts[0],a.id),-8);
+ assert.equal(canceledHoursReturned(s,s.shifts[0],b.id),0);
+});
+test('exact cancellation snapshots exclude adjacent prior undos for all cancellation paths',()=>{
+ for(const mode of ['cancel','opening','cancelCanvas']){
+  let s=fixture();const e=s.shifts[0],[a,b]=s.workers;
+  e.locations=[{name:'A',required:1}];
+  s.charges.push({id:'a',worker:a.id,shift:e.id,kind:'Accepted',hours:8},
+   {id:'b',worker:b.id,shift:e.id,kind:'Refused',hours:8},
+   {id:'undo-a',worker:a.id,shift:e.id,kind:'Reversal',hours:-8,reverses:'a'});
+  const cmd=mode==='cancel'?{type:mode,shifts:[e.id]}:mode==='opening'?{type:mode,shift:e.id,location:'A'}:{type:mode,canvas:s.current};
+  s=apply(s,{...cmd,reason:'Withdrawn'});
+  assert.equal(canceledHoursReturned(s,s.shifts[0],a.id),0);
+  assert.equal(canceledHoursReturned(s,s.shifts[0],b.id),-8);
+  assert.equal(total(s,a.id),a.starting);assert.equal(total(s,b.id),b.starting);
+ }
+});
+test('canceling the canvas later preserves an already canceled shift refund snapshot',()=>{
+ let s=fixture();const e=s.shifts[0],w=s.workers[0];
+ s.charges.push({id:'a',worker:w.id,shift:e.id,kind:'Accepted',hours:8});
+ s=apply(s,{type:'cancel',shifts:[e.id],reason:'Withdrawn'});
+ s=apply(s,{type:'cancelCanvas',canvas:e.canvas,reason:'Withdraw remaining work'});
+ assert.equal(canceledHoursReturned(s,s.shifts[0],w.id),-8);
+ assert.equal(s.charges.filter(c=>c.reverses==='a').length,1);
 });

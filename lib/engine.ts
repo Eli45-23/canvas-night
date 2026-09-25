@@ -334,8 +334,21 @@ function recordCancellationHours(s: State, e: Shift) {
 export function canceledHoursReturned(s: State, e: Shift, worker: string) {
     if(!e.canceled)return 0;
     if(e.cancellationHours)return e.cancellationHours[worker]||0;
-    // Legacy records have no cancellation snapshot: show all recorded reversals for this shift.
-    return s.charges.filter(c=>c.shift===e.id&&c.worker===worker&&c.reverses).reduce((n,c)=>n+c.hours,0);
+    // Old records predate cancellation snapshots. Cancellation appends its reversals
+    // together, in original-charge order. Recover only the final batch for this
+    // shift, never the sum of every undo/correction in its lifetime.
+    const entries=s.charges.filter(c=>c.shift===e.id);
+    const sourceIndex=new Map(entries.map((c,i)=>[c.id,i]));
+    let hours=0,nextSource=Infinity;
+    for(let i=entries.length-1;i>=0;i--){
+        const c=entries[i];
+        if(!c.reverses)break;
+        const index=sourceIndex.get(c.reverses);
+        if(index===undefined||index>=nextSource)break;
+        nextSource=index;
+        if(c.worker===worker)hours+=c.hours;
+    }
+    return hours;
 }
 function affected(s: State, text: string) {
     const responseIds=s.responses.filter(r=>r.active&&r.kind!=='outside').map(r=>r.id);

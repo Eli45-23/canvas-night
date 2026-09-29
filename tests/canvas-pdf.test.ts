@@ -95,23 +95,23 @@ test('correcting a call-out restores accepted notation, and canceled work does n
  s.charges.push({id:'accepted-charge',worker:w.id,shift:e.id,response:'absence-response',kind:'Accepted',hours:8});
  s=apply(s,{type:'absence',response:'absence-response',reason:'Cannot attend'});
  const canceled=apply(s,{type:'cancel',shifts:[e.id],reason:'Work withdrawn'});
- assert.equal(paperCanvasSheet(canceled,canceled.current,'FS').rows.find(r=>r.worker.id===w.id)!.cells[0].mark,'-8');
+ assert.equal(paperCanvasSheet(canceled,canceled.current,'FS').rows.find(r=>r.worker.id===w.id)!.cells[0].mark,'0');
  s=apply(s,{type:'undoAbsence',id:s.adjustments[0].id,reason:'Wrong call-out'});
  assert.equal(paperCanvasSheet(s,s.current,'FS').rows.find(r=>r.worker.id===w.id)!.cells[0].mark,'8');
 });
 
 
-test('cancellation displays refunds for accepted and refused hours without subtracting them twice',()=>{
+test('cancellation displays zero for accepted and refused hours while preserving refunded balances',()=>{
  let s=fixture();const e=s.shifts[0], [a,r]=s.workers;
  s.charges.push({id:'a',worker:a.id,shift:e.id,kind:'Accepted',hours:8},{id:'r',worker:r.id,shift:e.id,kind:'Refused',hours:8});
  s=apply(s,{type:'cancel',shifts:[e.id],reason:'Overtime withdrawn'});
  for(const w of [a,r]){
   const row=paperCanvasSheet(s,s.current,'FS').rows.find(r=>r.worker.id===w.id)!;
-  assert.equal(row.cells[0].mark,'-8');assert.equal(row.cells[0].hours,0);
+  assert.equal(row.cells[0].mark,'0');assert.equal(row.cells[0].hours,0);
   assert.equal(row.cells[0].running,w.starting);assert.equal(total(s,w.id),w.starting);
  }
  const legacy=structuredClone(s);delete legacy.shifts[0].cancellationHours;
- assert.equal(paperCanvasSheet(legacy,legacy.current,'FS').rows[0].cells[0].mark,'-8');
+ assert.equal(paperCanvasSheet(legacy,legacy.current,'FS').rows[0].cells[0].mark,'0');
  checkPhysicalPages(s);
 });
 test('cancellation snapshot excludes old reversals and includes only the newly returned balance',()=>{
@@ -120,7 +120,7 @@ test('cancellation snapshot excludes old reversals and includes only the newly r
  {id:'undo',worker:w.id,shift:e.id,kind:'Reversal',hours:-8,reverses:'old'},
  {id:'new',worker:w.id,shift:e.id,kind:'Refused',hours:8});
  s=apply(s,{type:'cancel',shifts:[e.id],reason:'Withdrawn'});
- assert.equal(paperCanvasSheet(s,s.current,'FS').rows[0].cells[0].mark,'-8');
+ assert.equal(paperCanvasSheet(s,s.current,'FS').rows[0].cells[0].mark,'0');
  assert.equal(s.shifts[0].cancellationHours![w.id],-8);
 });
 test('sheet corrections add and remove hours for any worker and shift while preserving opening hours and coverage',()=>{
@@ -149,13 +149,13 @@ test('final opening and entire canvas cancellation record refunds, including pos
   s.charges.push({id:'original',worker:w.id,shift:e.id,kind:'Accepted',hours:8},
    {id:'penalty',worker:w.id,shift:e.id,kind:'Absence penalty',hours:8});
   s=apply(s,mode==='opening'?{type:mode,shift:e.id,location:'A',reason:'Work withdrawn'}:{type:mode,canvas:s.current,reason:'Work withdrawn'});
-  assert.equal(paperCanvasSheet(s,e.canvas,'FS').rows[0].cells[0].mark,'-16');
+  assert.equal(paperCanvasSheet(s,e.canvas,'FS').rows[0].cells[0].mark,'0');
   assert.equal(total(s,w.id),w.starting);
  }
 });
 
 
-test('legacy undo, reaccept, and cancellation shows only the final refund for every worker',()=>{
+test('legacy undo, reaccept, and cancellation shows zero while preserving the final refund',()=>{
  let s=fixture();const e=s.shifts[0],[a,b]=s.workers;
  s.charges.push({id:'a1',worker:a.id,shift:e.id,kind:'Accepted',hours:8},
   {id:'undo-a1',worker:a.id,shift:e.id,kind:'Reversal',hours:-8,reverses:'a1'},
@@ -168,7 +168,7 @@ test('legacy undo, reaccept, and cancellation shows only the final refund for ev
  for(const w of [a,b]){
   assert.equal(canceledHoursReturned(s,s.shifts[0],w.id),-8);
   const row=paperCanvasSheet(s,s.current,'FS').rows.find(r=>r.worker.id===w.id)!;
-  assert.equal(row.cells[0].mark,'-8');assert.equal(row.ending,w.starting);
+  assert.equal(row.cells[0].mark,'0');assert.equal(row.ending,w.starting);
  }
  checkPhysicalPages(s);assert.deepEqual(s,before);
 });
@@ -212,4 +212,11 @@ test('canceling the canvas later preserves an already canceled shift refund snap
  s=apply(s,{type:'cancelCanvas',canvas:e.canvas,reason:'Withdraw remaining work'});
  assert.equal(canceledHoursReturned(s,s.shifts[0],w.id),-8);
  assert.equal(s.charges.filter(c=>c.reverses==='a').length,1);
+});
+
+test('canceled uncharged cells show plain zero in both sheet views',()=>{
+ let s=fixture();const e=s.shifts[0];s=apply(s,{type:'cancel',shifts:[e.id],reason:'Withdrawn'});
+ for(const all of [false,true])for(const row of paperCanvasSheet(s,s.current,'FS','',all).rows){
+  assert.equal(row.cells.find(c=>c.shift===e.id)!.mark,'0');
+ }
 });

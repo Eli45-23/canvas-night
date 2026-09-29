@@ -69,11 +69,11 @@ export function CanvasSheets({state,act,busy,initialCanvas=''}:{initialCanvas?:s
   </div>
   <div className="sheet-editor sheet-controls">
    <h3>Edit shift hours</h3>
-   <p>Click a charge cell, choose Add or Take away, and save with a reason. Balances update immediately after saving. Canceled work remains read-only. A negative number on canceled work shows hours returned; the running balance already includes that reversal.</p>
+   <p>Click a charge cell, choose Add or Take away, and save with a reason. Balances update immediately after saving. Canceled work remains read-only. Canceled shifts show 0; returned hours are already reflected in running balances and totals.</p>
    <label className="check"><input type="checkbox" checked={allShifts} onChange={e=>setAllShifts(e.target.checked)}/>Show all canvas shifts for editing, including other RDO dates</label>
    {['FS','SM'].filter(g=>group==='all'||group===g).map(g=>{const sheet=paperCanvasSheet(state,id,g,search,allShifts);return <div key={g}>
     <h3>{g==='FS'?'Friday–Saturday':'Sunday–Monday'} RDO</h3>
-    <div className="editable-sheet-scroll"><table className="editable-hours-sheet"><thead><tr><th>Worker</th><th>Starting hours</th>{sheet.shifts.map(sh=><th key={sh.id}>{sh.type}<br/>{label(sh)}{sh.canceled&&<><br/>Canceled · hours returned</>}</th>)}<th>Canvas total</th><th>Current total · all work</th></tr></thead>
+    <div className="editable-sheet-scroll"><table className="editable-hours-sheet"><thead><tr><th>Worker</th><th>Starting hours</th>{sheet.shifts.map(sh=><th key={sh.id}>{sh.type}<br/>{label(sh)}{sh.canceled&&<><br/>Canceled · 0 hours</>}</th>)}<th>Canvas total</th><th>Current total · all work</th></tr></thead>
     <tbody>{sheet.rows.map(row=><tr key={row.worker.id}><th scope="row">{row.worker.name}</th><td>{row.opening}</td>{sheet.shifts.map((sh,i)=>{const cell=row.cells[i];return <td key={sh.id}><button className="sheet-charge-button" disabled={busy||saving||!!c.canceled||sh.canceled||!state.workers.some(w=>w.id===row.worker.id)} aria-label={`Edit hours for ${row.worker.name} on ${sh.type} ${label(sh)}`} onClick={()=>editHours(row.worker.id,sh.id)}>{cell.mark||'—'}</button><small>Balance: {cell.running}</small></td>;})}<td><b>{row.ending}</b>{row.other.length>0&&<small>Includes {row.otherHours} on other shifts</small>}</td><td><b>{state.workers.some(w=>w.id===row.worker.id)?total(state,row.worker.id):'—'}</b></td></tr>)}</tbody></table></div>
     {!sheet.rows.length&&<p>No workers match the filter.</p>}
    </div>;})}

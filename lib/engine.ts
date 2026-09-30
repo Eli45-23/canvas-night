@@ -261,6 +261,9 @@ export function eligible(s: State, w: Worker, e: Shift, ignore?: string) { if (!
     return 'Different RDO group for this banks offer.'; if (s.responses.some(r => r.worker === w.id && r.shift === e.id && r.active && r.id !== ignore && !(ignore && r.kind==='refuse' && s.charges.some(c=>c.response===ignore&&c.kind==='Replacement'))))
     return 'Already answered this shift.'; return intervalConflict(work(s, w, e, ignore), { start: e.start, end: e.end, source: e.type }); }
 export function queue(s: State, e: Shift) { return s.workers.filter(w => !eligible(s, w, e)).sort((a, b) => compare(s, a, b)); }
+export function absentOnCanvasNight(s: State, worker: string, canvas: string) {
+    return (s.notHere||[]).some(n=>n.active&&n.worker===worker&&n.canvas===canvas);
+}
 export function replacementQueue(s: State, a: Adjustment) {
     const e=s.shifts.find(e=>e.id===a.shift), original=s.responses.find(r=>r.id===a.response);
     if(!e || !original || a.canceled || e.canceled || a.replacement || coverage(s,e,original.location).remaining<=0) return [];
@@ -268,7 +271,7 @@ export function replacementQueue(s: State, a: Adjustment) {
         && !s.responses.some(r=>r.worker===w.id && r.shift===e.id && r.active && r.kind==='accept')
         && !(s.replacementCalls||[]).some(c=>c.adjustment===a.id&&c.worker===w.id)
         && !intervalConflict(work(s,w,e),{start:e.start,end:e.end,source:e.type}))
-        .sort((a,b)=>compare(s,a,b));
+        .sort((a,b)=>Number(absentOnCanvasNight(s,a.id,e.canvas))-Number(absentOnCanvasNight(s,b.id,e.canvas))||compare(s,a,b));
 }
 function openingAdjustment(s: State, e: Shift, location: string) {
     return s.adjustments.find(a=>a.shift===e.id&&!a.canceled&&!a.replacement&&s.responses.some(r=>r.id===a.response&&r.active&&r.absent&&r.location===location));

@@ -745,3 +745,22 @@ test('Results call-out list uses existing replacement decline history and locati
  assert.equal(availableOpeningQueue(s,e,'A').length,0);
  assert.throws(()=>apply(s,{type:'assignOpenShift',shift:e.id,location:'A',worker:declined.id}),/no longer has an open position/);
 });
+
+test('replacement priority places present workers ahead of Not here, with ascending hours in each group',()=>{
+ let s=setup(['A'],['thu']),e=nextShift(s)!,original=queue(s,e)[0];
+ s=apply(s,{type:'respond',shift:e.id,worker:original.id,kind:'accept',location:'Banks'});
+ s=apply(s,{type:'absence',response:s.responses.at(-1)!.id,reason:'Test'});const a=s.adjustments.at(-1)!;
+ const ws=s.workers.filter(w=>w.id!==original.id).slice(0,4);
+ s.workers.forEach(w=>w.active=ws.includes(w)||w.id===original.id);
+ ws.forEach((w,i)=>{w.starting=[200,100,20,10][i];w.days=[];});
+ s.notHere=ws.slice(2).map(w=>({id:w.id,worker:w.id,canvas:e.canvas,shift:e.id,active:true,responseCount:0}));
+ // Absences from other canvases and undone Not here marks must not affect priority.
+ s.notHere.push({id:'old',worker:ws[1].id,canvas:'old-canvas',shift:e.id,active:true,responseCount:0},
+ {id:'undone',worker:ws[0].id,canvas:e.canvas,shift:e.id,active:false,responseCount:0});
+ assert.deepEqual(replacementQueue(s,a).map(w=>w.id),[ws[1].id,ws[0].id,ws[3].id,ws[2].id]);
+ assert.deepEqual(availableOpeningQueue(s,e,'Banks').map(w=>w.id),[ws[1].id,ws[0].id,ws[3].id,ws[2].id]);
+ assert.throws(()=>apply(s,{type:'replacementRespond',adjustment:a.id,worker:ws[3].id,kind:'accept'}));
+ s=apply(s,{type:'replacementRespond',adjustment:a.id,worker:ws[1].id,kind:'decline'});
+ s=apply(s,{type:'replacementRespond',adjustment:a.id,worker:ws[0].id,kind:'decline'});
+ assert.deepEqual(replacementQueue(s,s.adjustments[0]).map(w=>w.id),[ws[3].id,ws[2].id]);
+});

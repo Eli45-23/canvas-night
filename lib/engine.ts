@@ -214,6 +214,16 @@ export function sheetTotalsPreview(s: State) {
     return {rows,errors};
 }
 export function compare(s: State, a: Worker, b: Worker) { return total(s, a.id) - total(s, b.id) || compareSeniority(a,b); }
+// Most recent overtime period, independent of a historical canvas selected elsewhere.
+export function latestReplacementCanvas(s: State) {
+    return s.canvases.reduce<State['canvases'][number]|undefined>((latest,c)=>!latest||c.date>=latest.date?c:latest,undefined);
+}
+export function replacementAssignments(s: State) {
+    const canvas=latestReplacementCanvas(s);
+    if(!canvas||canvas.canceled)return [];
+    const shifts=new Set(s.shifts.filter(e=>e.canvas===canvas.id&&!e.canceled).map(e=>e.id));
+    return s.responses.filter(r=>shifts.has(r.shift)&&r.active&&r.kind==='accept'&&!r.absent);
+}
 export function currentShifts(s: State) { return s.shifts.filter(e => e.canvas === s.current); }
 export function coverage(s: State, e: Shift, location?: string) { const slots = e.locations.filter(l => !location || l.name === location); const required = slots.reduce((a, l) => a + l.required, 0); const assigned = s.responses.filter(r => r.shift === e.id && r.active && r.kind !== 'refuse' && !r.absent && (!location || r.location === location)).length; return { required, assigned, remaining: required - assigned }; }
 export function nextShift(s: State) { return currentShifts(s).find(e => !e.canceled && !e.closed && coverage(s, e).remaining > 0); }

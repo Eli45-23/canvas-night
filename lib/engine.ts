@@ -774,6 +774,30 @@ export function apply(original: State, cmd: any): State {
             log(s, `${cmd.type === 'undo' ? 'Undid last response' : 'Corrected response'}: ${who}, ${e.type}, ${label(e)}; reversed linked hours.${cmd.type === 'correct' ? ' Reason: ' + reason() : ''}`);
             break;
         }
+        case 'transferShift': {
+            const why=reason(),r=s.responses.find(r=>r.id===cmd.response&&r.active&&r.kind==='accept'&&!r.absent);
+            assert(r,'Select an active working assignment.');
+            const from=shift(r.shift),to=shift(cmd.shift),w=worker(r.worker);
+            assert(!from.canceled&&!to.canceled&&from.id!==to.id,'Select a different active shift.');
+            assert(from.canvas===to.canvas&&s.canvases.some(c=>c.id===to.canvas&&!c.canceled),'Both shifts must belong to the same active canvas.');
+            assert(!s.adjustments.some(a=>!a.canceled&&(a.response===r.id||a.replacementResponse===r.id)),'Resolve the source assignment’s linked call-out before moving it.');
+            assert(w.active&&(!to.group||w.rdo===to.group),'Worker is inactive or has a different RDO group.');
+            assert(to.locations.some(l=>l.name===cmd.location&&coverage(s,to,l.name).remaining>0),'Choose an open destination position.');
+            assert(!s.responses.some(x=>x.worker===w.id&&x.shift===to.id&&x.active&&x.kind==='accept'),'Worker already has an assignment or call-out on that shift.');
+            assert(!intervalConflict(work(s,w,to,r.id),{start:to.start,end:to.end,source:to.type}),'Destination conflicts with work or required rest.');
+            const charges=s.charges.filter(c=>c.response===r.id&&!c.reverses&&!s.charges.some(x=>x.reverses===c.id));
+            assert(charges.reduce((n,c)=>n+c.hours,0)===8,'Source assignment must have eight posted hours to transfer.');
+            const adjustment=openingAdjustment(s,to,cmd.location);
+            r.active=false;from.closed=false;
+            charges.forEach(c=>reverse(s,c));
+            const nr:Response={id:uid(),worker:w.id,shift:to.id,kind:'accept',location:cmd.location,active:true};
+            s.responses.push(nr);
+            charge(s,w.id,to.id,adjustment?'Replacement':'Accepted',8,{response:nr.id,...(adjustment?{adjustment:adjustment.id}:{})});
+            if(adjustment){adjustment.replacement=w.id;adjustment.replacementResponse=nr.id;}
+            affected(s,'Assignment moved to a different shift. Review coverage and later offers.');
+            log(s,`Moved ${w.name} from ${from.type}, ${label(from)}, ${r.location} to ${to.type}, ${label(to)}, ${cmd.location}. Source -8, destination +8; total unchanged. Original position reopened. ${why}`);
+            break;
+        }
         case 'move': {
             const r = s.responses.find(r => r.id === cmd.response && r.active && r.kind === 'accept' && !r.absent);
             assert(r, 'Active assignment not found.');

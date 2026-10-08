@@ -764,3 +764,47 @@ test('replacement priority places present workers ahead of Not here, with ascend
  s=apply(s,{type:'replacementRespond',adjustment:a.id,worker:ws[0].id,kind:'decline'});
  assert.deepEqual(replacementQueue(s,s.adjustments[0]).map(w=>w.id),[ws[3].id,ws[2].id]);
 });
+
+test('Vacation pick skips future offers and all replacement routes without changing previous answers or hours',()=>{
+ let s=setup(['A'],['thu','fri']);const e=nextShift(s)!,w=queue(s,e)[0];
+ // Earlier work remains intact when vacation is marked at a later offer.
+ const prior={...structuredClone(e),id:'earlier',start:e.start-7*24*H,end:e.end-7*24*H};s.shifts.unshift(prior);prior.closed=true;
+ s.responses.push({id:'earlier-response',worker:w.id,shift:prior.id,kind:'accept',location:'Banks',active:true});
+ s.charges.push({id:'earlier-charge',worker:w.id,shift:prior.id,response:'earlier-response',kind:'Accepted',hours:8});
+ s.workers.filter(x=>x.id!==w.id).forEach(x=>x.starting+=100);
+ const before=structuredClone(s);s=apply(s,{type:'vacationPick',shift:e.id,worker:w.id});
+ assert.deepEqual(s.charges,before.charges);assert.deepEqual(s.responses,before.responses);assert.equal(total(s,w.id),total(before,w.id));
+ assert(s.notHere!.at(-1)!.vacation);assert(!queue(s,e).some(x=>x.id===w.id));
+ for(const sh of s.shifts){assert(!availableOpeningQueue(s,sh,sh.locations[0].name).some(x=>x.id===w.id));assert(!lateAvailableQueue(s,sh).some(x=>x.id===w.id));}
+ assert.throws(()=>apply(s,{type:'assignOpenShift',shift:e.id,location:'Banks',worker:w.id}));
+ assert.throws(()=>apply(s,{type:'transferShift',response:'earlier-response',shift:e.id,location:'Banks',reason:'Move'}),/vacation pick/);
+ const candidate=queue(s,e)[0];s=apply(s,{type:'respond',shift:e.id,worker:candidate.id,kind:'accept',location:'Banks'});
+ s=apply(s,{type:'absence',response:s.responses.at(-1)!.id,reason:'Call-out'});
+ assert(!replacementQueue(s,s.adjustments.at(-1)!).some(x=>x.id===w.id));
+ s=apply(s,{type:'restoreHere',id:s.notHere![0].id});assert(queue(s,e).some(x=>x.id===w.id));
+ assert.equal(total(s,w.id),total(before,w.id));
+});
+test('Vacation pick undo uses the canvas undo button and never applies to another weekend',()=>{
+ let s=setup(['A'],['thu']),e=nextShift(s)!,w=queue(s,e)[0];
+ s=apply(s,{type:'vacationPick',shift:e.id,worker:w.id});
+ assert(!queue(s,e).some(x=>x.id===w.id));
+ const other={...e,id:'other-week',canvas:'other',start:e.start+7*24*H,end:e.end+7*24*H};
+ assert(queue(s,other).some(x=>x.id===w.id));
+ s=apply(s,{type:'undo'});assert.equal(s.notHere![0].active,false);assert.equal(queue(s,e)[0].id,w.id);assert.equal(s.charges.length,0);
+});
+test('past corrections and cancellations flow through every later sheet once, including legacy sheets',()=>{
+ for(const legacy of [false,true]){
+  let s=seed();const w=s.workers[0];w.starting=100;
+  s.canvases=['2026-09-25','2026-10-02','2026-10-09'].map((date,i)=>({id:'c'+i,date,reviewed:true,roster:structuredClone(s.workers),baseline:{[w.id]:100+i*8},...(legacy?{}:{carryBasis:{[w.id]:i*8},startingBasis:{[w.id]:100}})}));
+  s.shifts=s.canvases.map(c=>({id:c.id,canvas:c.id,type:'Banks',start:at(c.date,22),end:at(dayAdd(c.date,1),6),locations:[{name:'Banks',required:1}],closed:true,canceled:false}));
+  s.charges=s.shifts.map(e=>({id:e.id,worker:w.id,shift:e.id,kind:'Accepted',hours:8}));s.current='c2';
+  const baselines=structuredClone(s.canvases.map(c=>c.baseline));
+  s=apply(s,{type:'correction',worker:w.id,shift:'c0',hours:-8,reason:'Remove duplicate'});
+  assert.equal(canvasSheet(s,'c1').rows[0].opening,100);assert.equal(canvasSheet(s,'c2').rows[0].opening,108);assert.equal(canvasSheet(s,'c2').rows[0].ending,total(s,w.id));
+  s=apply(s,{type:'correction',worker:w.id,shift:'c1',hours:3,reason:'Correct amount'});
+  assert.equal(canvasSheet(s,'c0').rows[0].ending,100);assert.equal(canvasSheet(s,'c2').rows[0].opening,111);
+  s=apply(s,{type:'cancel',shifts:['c1'],reason:'Withdrawn'});
+  assert.equal(canvasSheet(s,'c2').rows[0].opening,100);assert.equal(canvasSheet(s,'c2').rows[0].ending,108);
+  assert.deepEqual(s.canvases.map(c=>c.baseline),baselines);
+ }
+});

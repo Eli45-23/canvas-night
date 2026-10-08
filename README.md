@@ -63,3 +63,9 @@ The app uses React/Vinext, a server-validated command endpoint, and SQLite-compa
 In **Canvas sheets**, click a worker’s shift charge, choose **Add hours** or **Take away hours**, enter the amount and a reason, and save. The correction updates running balances, current totals across the app, and the PDF immediately after saving. History retains the correction; starting hours and coverage assignments are preserved. Enable **Show all canvas shifts** to adjust another RDO date. Canceled shifts are read-only.
 
 Canceled shift cells display **0** in the editable sheet and PDF. Returned hours remain recorded in the ledger and are already reflected in running balances and totals. Cancellation history and refund snapshots are preserved.
+
+### Carry-forward corrections and vacation picks
+
+Canvas sheets now recalculate carried hours from earlier saved canvases. Correcting or canceling older work updates later opening balances, running hours, and PDFs without posting the correction again. Saved baseline snapshots remain available; later-canvas work is excluded from earlier sheets.
+
+**Vacation pick · no charge** skips the current worker for the rest of that canvas, including replacement offers and moves into another shift. Earlier answers, assignments, and charges remain intact. The skipped-worker list identifies vacation picks and offers **Undo vacation pick**. The normal canvas Undo button can also undo the latest skip. A vacation pick does not carry into another weekend.

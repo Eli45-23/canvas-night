@@ -71,7 +71,7 @@ export type State = {
     sampleArchive?: { at: string; source: string; state: State };
     baselineResetArchive?: { at: string; source: string; state: State };
     sheetTotalsSync?: { at: string; source: string; shift: string; chargeIds: string[] };
-    notHere?: {id:string;worker:string;canvas:string;shift:string;active:boolean;responseCount:number}[];
+    notHere?: {id:string;worker:string;canvas:string;shift:string;active:boolean;responseCount:number;vacation?:boolean}[];
     workers: Worker[];
     shifts: Shift[];
     responses: Response[];
@@ -82,6 +82,8 @@ export type State = {
         date: string;
         reviewed: boolean;
         baseline: Record<string, number>;
+        carryBasis?: Record<string, number>;
+        startingBasis?: Record<string, number>;
         canceled?: boolean;
         canceledAt?: string;
         cancelReason?: string;
@@ -255,7 +257,7 @@ export function intervalConflict(intervals: Interval[], candidate: Interval) { i
     if ((includesCandidate||nextIncludesCandidate) && b.end - b.start >= 16 * H && next && next.start - b.end < 8 * H)
         return 'Eight hours off are required after sixteen consecutive hours.';
 } return ''; }
-export function eligible(s: State, w: Worker, e: Shift, ignore?: string) { if (!ignore && (s.notHere || []).some(n=>n.active&&n.worker===w.id&&n.canvas===e.canvas))
+export function eligible(s: State, w: Worker, e: Shift, ignore?: string) { if(onVacationPick(s,w.id,e.canvas))return 'Vacation pick — no further offers for this canvas.'; if (!ignore && (s.notHere || []).some(n=>n.active&&n.worker===w.id&&n.canvas===e.canvas))
     return 'Not here — skipped for this entire canvas; no hours charged.'; if (!w.active)
     return 'Worker is inactive.'; if (e.group && w.rdo !== e.group)
     return 'Different RDO group for this banks offer.'; if (s.responses.some(r => r.worker === w.id && r.shift === e.id && r.active && r.id !== ignore && !(ignore && r.kind==='refuse' && s.charges.some(c=>c.response===ignore&&c.kind==='Replacement'))))
@@ -267,7 +269,7 @@ export function absentOnCanvasNight(s: State, worker: string, canvas: string) {
 export function replacementQueue(s: State, a: Adjustment) {
     const e=s.shifts.find(e=>e.id===a.shift), original=s.responses.find(r=>r.id===a.response);
     if(!e || !original || a.canceled || e.canceled || a.replacement || coverage(s,e,original.location).remaining<=0) return [];
-    return s.workers.filter(w=>w.active && (!e.group || w.rdo===e.group)
+    return s.workers.filter(w=>w.active && !onVacationPick(s,w.id,e.canvas) && (!e.group || w.rdo===e.group)
         && !s.responses.some(r=>r.worker===w.id && r.shift===e.id && r.active && r.kind==='accept')
         && !(s.replacementCalls||[]).some(c=>c.adjustment===a.id&&c.worker===w.id)
         && !intervalConflict(work(s,w,e),{start:e.start,end:e.end,source:e.type}))
@@ -281,7 +283,7 @@ export function availableOpeningQueue(s: State, e: Shift, location: string) {
     if(e.canceled||!e.locations.some(l=>l.name===location)||coverage(s,e,location).remaining<=0)return [];
     const adjustment=openingAdjustment(s,e,location);
     if(adjustment)return replacementQueue(s,adjustment);
-    return s.workers.filter(w=>w.active&&(!e.group||w.rdo===e.group)
+    return s.workers.filter(w=>w.active&&!onVacationPick(s,w.id,e.canvas)&&(!e.group||w.rdo===e.group)
         &&!s.responses.some(r=>r.worker===w.id&&r.shift===e.id&&r.active&&r.kind==='accept')
         &&!intervalConflict(work(s,w,e),{start:e.start,end:e.end,source:e.type}))
         .sort((a,b)=>compare(s,a,b));
@@ -289,7 +291,7 @@ export function availableOpeningQueue(s: State, e: Shift, location: string) {
 export function lateAvailableQueue(s: State, e: Shift) {
     if(e.canceled || coverage(s,e).remaining<=0) return [];
     const marked=new Set((s.notHere||[]).filter(n=>n.active&&n.canvas===e.canvas).map(n=>n.worker));
-    return s.workers.filter(w=>marked.has(w.id)&&w.active&&(!e.group||w.rdo===e.group)
+    return s.workers.filter(w=>marked.has(w.id)&&!onVacationPick(s,w.id,e.canvas)&&w.active&&(!e.group||w.rdo===e.group)
         && !s.responses.some(r=>r.worker===w.id&&r.shift===e.id&&r.active)
         && !intervalConflict(work(s,w,e),{start:e.start,end:e.end,source:e.type}))
         .sort((a,b)=>compare(s,a,b));
@@ -301,6 +303,16 @@ export function calloutChargeStatus(s: State, responseId: string) {
     if(!response||!adjustment)return null;
     return {label:adjustment.penalty?'R16':'R8',pendingHours:adjustment.penalty&&!adjustment.applied?8:0};
 }
+// A saved canvas carries all earlier-created canvases and independent balance entries.
+function carriedHours(s: State, canvas: string, worker: string) {
+    const index=s.canvases.findIndex(c=>c.id===canvas);
+    const excluded=new Set(s.canvases.slice(index).map(c=>c.id));
+    const included=new Set(s.shifts.filter(e=>!excluded.has(e.canvas)).map(e=>e.id));
+    return s.charges.filter(c=>c.worker===worker&&included.has(c.shift)).reduce((n,c)=>n+c.hours,0);
+}
+export function onVacationPick(s: State, worker: string, canvas: string) {
+    return (s.notHere||[]).some(n=>n.active&&n.vacation&&n.worker===worker&&n.canvas===canvas);
+}
 export function canvasSheet(s: State, id: string) {
     const canvas=s.canvases.find(c=>c.id===id);
     assert(canvas,'Select a saved canvas.');
@@ -308,7 +320,11 @@ export function canvasSheet(s: State, id: string) {
     const roster=canvas.roster ? [...canvas.roster] : s.workers.filter(w=>w.id in canvas.baseline);
     for(const w of s.workers)if(!roster.some(r=>r.id===w.id)&&s.charges.some(c=>c.worker===w.id&&shifts.some(e=>e.id===c.shift)))roster.push(w);
     const rows=roster.map(w=>{
-        const opening=canvas.baseline[w.id] ?? w.starting;
+        const saved=canvas.baseline[w.id] ?? w.starting;
+        const starting=canvas.startingBasis?.[w.id] ?? w.starting;
+        const basis=canvas.carryBasis?.[w.id] ?? (saved-starting);
+        const liveStarting=s.workers.find(x=>x.id===w.id)?.starting ?? starting;
+        const opening=saved+carriedHours(s,id,w.id)-basis+(liveStarting-starting);
         let running=opening;
         const cells=shifts.map(e=>{
             const entries=s.charges.filter(c=>c.worker===w.id&&c.shift===e.id);
@@ -604,14 +620,15 @@ export function apply(original: State, cmd: any): State {
             log(next, `Replaced ${s.workers.length} sample workers with ${next.workers.length} workers from ${cmd.source}. Sample canvases and charges archived separately; imported hours are the new opening balances.`);
             return next;
         }
+        case 'vacationPick':
         case 'notHere': {
             const e=nextShift(s);
             assert(e&&e.id===cmd.shift,'This is not the current shift.');
             assert(!chipsBlocked(s,e),'Secure chip-out coverage before remaining banks.');
             const w=queue(s,e)[0];
             assert(w&&w.id===cmd.worker,'The next worker changed. Reload before recording Not here.');
-            (s.notHere ||= []).push({id:uid(),worker:w.id,canvas:e.canvas,shift:e.id,active:true,responseCount:s.responses.length});
-            log(s,`${w.name}: Not here. Skipped for the entire canvas starting ${label(e)}. No hours added or subtracted; earlier assignments remain recorded.`);
+            (s.notHere ||= []).push({id:uid(),worker:w.id,canvas:e.canvas,shift:e.id,active:true,responseCount:s.responses.length,vacation:cmd.type==='vacationPick'});
+            log(s,`${w.name}: ${cmd.type==='vacationPick'?'Vacation pick':'Not here'}. Skipped for the entire canvas starting ${label(e)}. No hours added or subtracted; earlier assignments remain recorded.`);
             break;
         }
         case 'restoreHere': {
@@ -620,7 +637,7 @@ export function apply(original: State, cmd: any): State {
             n.active=false;
             const e=shift(n.shift);if(!e.canceled)e.closed=false;
             affected(s,`Review subsequent offers after restoring ${worker(n.worker).name} to this canvas. Existing assignments are preserved.`);
-            log(s,`Undid Not here for ${worker(n.worker).name}; eligible offers resume in hours-and-seniority order. No hours changed.`);
+            log(s,`Undid ${n.vacation?'Vacation pick':'Not here'} for ${worker(n.worker).name}; eligible offers resume in hours-and-seniority order. No hours changed.`);
             break;
         }
         case 'worker': {
@@ -680,6 +697,8 @@ export function apply(original: State, cmd: any): State {
             const canvassedOn=cmd.canvassedOn || localDate(Date.now());
             assert(/^\d{4}-\d{2}-\d{2}$/.test(canvassedOn)&&localDate(at(canvassedOn,12))===canvassedOn,'Enter a valid canvassing date.');
             s.canvases.push({ id, date: cmd.date, canvassedOn, roster:structuredClone(s.workers), reviewed: true, baseline: Object.fromEntries(s.workers.map(w => [w.id, total(s, w.id)])) });
+            s.canvases.at(-1)!.carryBasis=Object.fromEntries(s.workers.map(w=>[w.id,carriedHours(s,id,w.id)]));
+            s.canvases.at(-1)!.startingBasis=Object.fromEntries(s.workers.map(w=>[w.id,w.starting]));
             const add = (type: string, d: string, h: number, group?: string) => { const endDate = h === 22 ? dayAdd(d, 1) : d; const endHour = h === 22 ? 6 : h + 8; s.shifts.push({ id: uid(), canvas: id, type, start: at(d, h), end: at(endDate, endHour), group, locations: type === 'Banks' ? [{ name: 'Banks', required: 18 }] : cmd.locations.map((name: string) => ({ name: name.trim(), required: 2 })), closed: false, canceled: false }); };
             const banks = cmd.banks || [];
             if (banks.includes('thu'))
@@ -781,6 +800,7 @@ export function apply(original: State, cmd: any): State {
             assert(!from.canceled&&!to.canceled&&from.id!==to.id,'Select a different active shift.');
             assert(from.canvas===to.canvas&&s.canvases.some(c=>c.id===to.canvas&&!c.canceled),'Both shifts must belong to the same active canvas.');
             assert(!s.adjustments.some(a=>!a.canceled&&(a.response===r.id||a.replacementResponse===r.id)),'Resolve the source assignment’s linked call-out before moving it.');
+            assert(!onVacationPick(s,w.id,to.canvas),'Worker has a vacation pick for this canvas.');
             assert(w.active&&(!to.group||w.rdo===to.group),'Worker is inactive or has a different RDO group.');
             assert(to.locations.some(l=>l.name===cmd.location&&coverage(s,to,l.name).remaining>0),'Choose an open destination position.');
             assert(!s.responses.some(x=>x.worker===w.id&&x.shift===to.id&&x.active&&x.kind==='accept'),'Worker already has an assignment or call-out on that shift.');

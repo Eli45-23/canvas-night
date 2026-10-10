@@ -218,3 +218,23 @@ body {
 .sheet-charge-button{border:1px solid #154b69;border-radius:4px;min-width:64px;padding:7px;background:#f1f7fb;color:#154b69;white-space:pre-line}
 .sheet-charge-button:disabled{border-color:transparent;background:transparent;color:#526574}
 .sheet-charge-button:focus-visible{outline:3px solid #154b69;outline-offset:2px}
+
+/* High-visibility actions: readable labels, clear boundaries and generous targets. */
+.app-action{min-height:44px;height:auto;max-width:100%;padding:10px 16px;border:2px solid transparent;font-size:15px;font-weight:700;line-height:1.35;white-space:normal;overflow-wrap:anywhere;box-shadow:0 2px 3px #182b3a18;transition:background-color .15s,border-color .15s,box-shadow .15s}
+.app-action[data-variant="default"]{background:#154b69;color:#fff;border-color:#154b69}
+.app-action[data-variant="outline"],.app-action[data-variant="ghost"],.app-action[data-variant="secondary"]{background:#fff;color:#154b69;border-color:#52778b}
+.app-action[data-variant="destructive"],.app-action.refuse-button{background:#a52932;color:#fff;border-color:#a52932}
+.app-action[data-variant="link"]{color:#154b69;text-decoration:underline;box-shadow:none}
+.app-action:not(:disabled):hover{box-shadow:0 3px 6px #182b3a33}
+.app-action[data-variant="default"]:not(:disabled):hover{background:#103b53;border-color:#103b53}
+.app-action:is([data-variant="outline"],[data-variant="ghost"],[data-variant="secondary"]):not(:disabled):hover{background:#e7eef2;border-color:#154b69}
+.app-action[data-variant="destructive"]:not(:disabled):hover,.app-action.refuse-button:not(:disabled):hover{background:#812028;border-color:#812028;color:#fff}
+.app-action:focus-visible,.steps button:focus-visible{outline:3px solid #154b69;outline-offset:3px;box-shadow:0 0 0 2px white}
+.app-action:disabled{opacity:1;background:#e3e8ec;color:#657581;border-color:#bdc8cf;box-shadow:none}
+.actions{gap:12px}.row,.next-worker{flex-wrap:wrap}
+.next-worker .app-action+.app-action{margin-left:8px}
+.steps{gap:8px}.steps button{min-height:44px;font-size:14px!important;font-weight:700!important;background:#fff!important;color:#154b69!important;border:2px solid #8a9eaa!important;border-radius:6px!important}
+.steps button[data-state=active]{border-color:#154b69!important}
+.steps button:hover{background:#e7eef2!important}.steps button[data-state=active]:hover{background:#103b53!important}
+.sheet-charge-button{min-height:44px;min-width:70px;font-weight:700;border-width:2px}
+@media(max-width:600px){.app-action{padding:10px 12px}.actions>.app-action{flex:1 1 auto}.steps button{font-size:14px!important;padding:10px 12px!important}.next-worker .app-action+.app-action{margin-left:0}.next-worker>div:first-child{display:flex;flex-wrap:wrap;gap:8px}.next-worker h2{flex-basis:100%}}

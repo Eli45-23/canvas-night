@@ -15,6 +15,7 @@ const managedLinux = readExecutionProfile() === "managed-linux";
 
 const hostedBuild = process.env.CANVAS_HOSTED_BUILD === "1";
 const localBindingConfig = {
+  vars: { CANVAS_MODE: hostedBuild ? "shared" : "local" },
   name: hostedBuild ? "canvas-night" : "site-creator-vinext-starter",
   main: "vinext/server/fetch-handler",
   compatibility_flags: ["nodejs_compat"],

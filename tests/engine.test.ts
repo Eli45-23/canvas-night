@@ -808,3 +808,19 @@ test('past corrections and cancellations flow through every later sheet once, in
   assert.deepEqual(s.canvases.map(c=>c.baseline),baselines);
  }
 });
+
+test('direct replacement selection assigns a later eligible worker without recording skipped declines',()=>{
+ let s=setup(['A'],['thu']),e=nextShift(s)!,w=queue(s,e)[0];s=apply(s,{type:'respond',shift:e.id,worker:w.id,kind:'accept',location:'Banks'});
+ s=apply(s,{type:'absence',response:s.responses.at(-1)!.id,reason:'Call-out'});const a=s.adjustments.at(-1)!,candidates=replacementQueue(s,a),chosen=candidates.at(-1)!,before=total(s,chosen.id),originalHours=total(s,w.id);
+ s=apply(s,{type:'replacementRespond',adjustment:a.id,worker:chosen.id,kind:'accept',direct:true});
+ assert.equal(s.adjustments.at(-1)!.replacement,chosen.id);assert.equal(total(s,chosen.id),before+8);assert.equal(total(s,w.id),originalHours);
+ assert.equal(s.replacementCalls!.length,1);assert.equal(s.replacementCalls![0].worker,chosen.id);assert.equal(s.replacementCalls![0].kind,'accept');
+ assert.throws(()=>apply(s,{type:'replacementRespond',adjustment:a.id,worker:candidates[0].id,kind:'accept',direct:true}),/unfilled/);
+ s=apply(s,{type:'undoAbsence',id:a.id,reason:'Original worker returns'});assert.equal(total(s,chosen.id),before);
+});
+test('direct selection still rejects ineligible workers without changing records',()=>{
+ let s=setup(['A'],['thu']),e=nextShift(s)!,w=queue(s,e)[0];s=apply(s,{type:'respond',shift:e.id,worker:w.id,kind:'accept',location:'Banks'});
+ s=apply(s,{type:'absence',response:s.responses.at(-1)!.id,reason:'Call-out'});const a=s.adjustments.at(-1)!,chosen=replacementQueue(s,a).at(-1)!;
+ s.notHere=[{id:'vacation',worker:chosen.id,canvas:e.canvas,shift:e.id,active:true,responseCount:0,vacation:true}];const before=structuredClone(s);
+ assert.throws(()=>apply(s,{type:'replacementRespond',adjustment:a.id,worker:chosen.id,kind:'accept',direct:true}),/no longer eligible/);assert.deepEqual(s,before);
+});

@@ -22,3 +22,7 @@ Tests cover legacy migration, records larger than D1's row limit, Unicode bounda
 6. During a short agreed pause in editing, transfer the latest snapshot, verify it, and switch both users to the shared site. Preserve the original local data and backup. Do not continue writing to independent local copies after cutover.
 
 The local benchmark is only an estimate. Paid hosting starts at $5/month with metered overages; no plan has been activated by this change.
+
+## Private staging configuration
+
+The Cloudflare `canvas-night` Worker tracks `feat/shared-cloudflare-storage` during preparation. Build command: `npm run build:cloudflare`; deploy command: `npm run deploy:cloudflare`. This targets the separate `canvas-night-staging` database. Access is configured for all traffic with the owner-only policy. Preview builds are disabled. The initial default build failed before these commands were configured. No operational records have been imported. Local builds continue using the local database binding.

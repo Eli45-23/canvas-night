@@ -13,15 +13,17 @@ const { d1, r2 } = hostingConfig;
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 const managedLinux = readExecutionProfile() === "managed-linux";
 
+const hostedBuild = process.env.CANVAS_HOSTED_BUILD === "1";
 const localBindingConfig = {
+  name: hostedBuild ? "canvas-night" : "site-creator-vinext-starter",
   main: "vinext/server/fetch-handler",
   compatibility_flags: ["nodejs_compat"],
   d1_databases: d1
     ? [
         {
           binding: d1,
-          database_name: "site-creator-d1",
-          database_id: SITE_CREATOR_PLACEHOLDER_DATABASE_ID,
+          database_name: hostedBuild ? "canvas-night-staging" : "site-creator-d1",
+          database_id: hostedBuild ? "3ce6a3db-0890-455a-98bb-be0677040e5d" : SITE_CREATOR_PLACEHOLDER_DATABASE_ID,
         },
       ]
     : [],
@@ -57,7 +59,7 @@ export default defineConfig(async () => {
     },
     plugins: [
       vinext(),
-      sites({ mockAuth: !managedLinux }),
+      sites({ mockAuth: !managedLinux && !hostedBuild }),
       cloudflare({
         viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
         inspectorPort: false,

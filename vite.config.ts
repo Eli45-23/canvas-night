@@ -1,8 +1,9 @@
 import vinext from "vinext";
-import { defineConfig } from "vite";
+import { defineConfig, type ViteDevServer } from "vite";
 import hostingConfig from "./.openai/hosting.json";
 import { readExecutionProfile } from "./scripts/execution-profile.mjs";
 import { sites } from "./build/sites-vite-plugin";
+import { existsSync } from "node:fs";
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
   "00000000-0000-4000-8000-000000000000";
@@ -59,6 +60,24 @@ export default defineConfig(async () => {
       ...(isCodexSeatbeltSandbox ? { watch: { useFsEvents: false, usePolling: true } } : {}),
     },
     plugins: [
+      {
+        name: "local-shared-site-cutover",
+        enforce: "pre" as const,
+        configureServer(server: ViteDevServer) {
+          server.middlewares.use((req, res, next) => {
+            // Checkout-local marker is created only after a verified migration.
+            if (!existsSync(new URL("./.sites-runtime/shared-site-active", import.meta.url))) return next();
+            res.setHeader("Cache-Control", "no-store");
+            if (req.method === "GET" || req.method === "HEAD") {
+              res.writeHead(302, { Location: "https://canvas-night.eliascolon23.workers.dev/" });
+              res.end();
+            } else {
+              res.writeHead(409, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ error: "This local copy is archived. Open https://canvas-night.eliascolon23.workers.dev to use the shared records." }));
+            }
+          });
+        },
+      },
       vinext(),
       sites({ mockAuth: !managedLinux && !hostedBuild }),
       cloudflare({

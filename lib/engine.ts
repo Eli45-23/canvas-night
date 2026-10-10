@@ -596,8 +596,10 @@ export function apply(original: State, cmd: any): State {
             assert(a&&!a.replacement,'Select an unfilled call-out.');
             const e=shift(a.shift),original=s.responses.find(r=>r.id===a.response)!;
             assert(!e.canceled&&original.absent&&coverage(s,e,original.location).remaining>0,'This opening is no longer available.');
-            const w=replacementQueue(s,a)[0];
-            assert(w&&w.id===cmd.worker,'The replacement order changed. Reload and contact the next worker.');
+            const candidates=replacementQueue(s,a);
+            const direct=cmd.direct===true&&cmd.kind==='accept';
+            const w=direct?candidates.find(w=>w.id===cmd.worker):candidates[0];
+            assert(w&&w.id===cmd.worker,direct?'This worker is no longer eligible for this opening.':'The replacement order changed. Reload and contact the next worker.');
             assert(['accept','decline'].includes(cmd.kind),'Invalid replacement answer.');
             const call:{id:string;adjustment:string;worker:string;kind:'accept'|'decline';response?:string}={id:uid(),adjustment:a.id,worker:w.id,kind:cmd.kind};
             if(cmd.kind==='accept'){
@@ -606,7 +608,7 @@ export function apply(original: State, cmd: any): State {
                 charge(s,w.id,e.id,'Replacement',8,{response:r.id,adjustment:a.id});
             }
             (s.replacementCalls ||= []).push(call);
-            log(s,`${w.name}: last-minute replacement ${cmd.kind==='accept'?'accepted; +8 hours':'declined; no hours charged'}, ${e.type}, ${label(e)}, ${original.location}.`);
+            log(s,`${w.name}: ${direct?'directly selected ':''}last-minute replacement ${cmd.kind==='accept'?'accepted; +8 hours':'declined; no hours charged'}, ${e.type}, ${label(e)}, ${original.location}.`);
             break;
         }
         case 'replaceSamples': {

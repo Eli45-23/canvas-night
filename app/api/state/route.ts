@@ -1,12 +1,9 @@
 import { env } from 'cloudflare:workers';
 import { apply, seed, type State } from '@/lib/engine';
+import { initializeStorage, readState, saveState } from '@/lib/state-storage';
 export const dynamic = 'force-dynamic';
 async function load() { if (!env.DB)
-    throw new Error('Storage is unavailable.'); await env.DB.prepare('INSERT OR IGNORE INTO shop_state (id,revision,body) VALUES (1,0,?)').bind(JSON.stringify(seed())).run(); const row = await env.DB.prepare('SELECT revision, body FROM shop_state WHERE id=1').first<{
-    revision: number;
-    body: string;
-}>(); if (!row)
-    throw new Error('Storage could not be loaded.'); return { revision: row.revision, state: JSON.parse(row.body) as State }; }
+    throw new Error('Storage is unavailable.'); await env.DB.prepare('INSERT OR IGNORE INTO shop_state (id,revision,body) VALUES (1,0,?)').bind(JSON.stringify(seed())).run(); await initializeStorage(env.DB); return readState<State>(env.DB); }
 export async function GET() { try {
     return Response.json(await load(), { headers: { 'Cache-Control': 'no-store' } });
 }
@@ -23,8 +20,8 @@ export async function POST(req: Request) { try {
     if (body.revision !== current.revision)
         return Response.json({ error: 'Records changed in another window. Reload before applying this action.' }, { status: 409 });
     const next = apply(current.state, body.command);
-    const result = await env.DB!.prepare('UPDATE shop_state SET body=?, revision=revision+1 WHERE id=1 AND revision=?').bind(JSON.stringify(next), current.revision).run();
-    if (result.meta.changes !== 1)
+    const saved = await saveState(env.DB!, current.revision, next);
+    if (!saved)
         return Response.json({ error: 'Another operator saved first. Reload and review the latest records.' }, { status: 409 });
     return Response.json({ state: next, revision: current.revision + 1 });
 }

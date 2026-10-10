@@ -94,6 +94,7 @@ export type State = {
     current: string;
     reviewed: boolean;
     history: {
+        operator?: string;
         id: string;
         at: string;
         text: string;

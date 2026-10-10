@@ -238,3 +238,7 @@ body {
 .steps button:hover{background:#e7eef2!important}.steps button[data-state=active]:hover{background:#103b53!important}
 .sheet-charge-button{min-height:44px;min-width:70px;font-weight:700;border-width:2px}
 @media(max-width:600px){.app-action{padding:10px 12px}.actions>.app-action{flex:1 1 auto}.steps button{font-size:14px!important;padding:10px 12px!important}.next-worker .app-action+.app-action{margin-left:0}.next-worker>div:first-child{display:flex;flex-wrap:wrap;gap:8px}.next-worker h2{flex-basis:100%}}
+
+/* Keep account access visible without crowding the header on small screens. */
+.header-right{flex-wrap:wrap;justify-content:flex-end}.account-controls{display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap}.account-email{font-size:12px;overflow-wrap:anywhere}.header-right .badge{margin-left:0}
+@media(max-width:700px){header{flex-wrap:wrap}.header-right{width:100%;margin-left:0;justify-content:flex-start}.account-controls{justify-content:flex-start}}
